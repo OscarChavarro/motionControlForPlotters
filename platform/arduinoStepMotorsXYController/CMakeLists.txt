@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(motionControlArduino LANGUAGES C CXX)
+project(arduinoStepMotorsXYController LANGUAGES C CXX)
 
 if(NOT DEFINED MOTION_CONTROL_REPO_ROOT)
   get_filename_component(MOTION_CONTROL_REPO_ROOT
@@ -70,30 +70,30 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 find_program(PICOCOM picocom)
 
 set(PLATFORM_ARDUINO_SOURCES
-  src/main/cpp/main.cpp
-  src/main/cpp/platform/arduino/GpioLed.cpp
-  src/main/cpp/platform/arduino/SystemClock.cpp
-  src/main/cpp/platform/arduino/UartSerial.cpp
+  src/main.cpp
+  src/GpioLed.cpp
+  src/SystemClock.cpp
+  src/UartSerial.cpp
 )
 
-add_executable(motionControlArduino
+add_executable(arduinoStepMotorsXYController
   ${MOTION_CONTROL_CORE_SOURCES}
   ${PLATFORM_ARDUINO_SOURCES})
 
-target_include_directories(motionControlArduino
+target_include_directories(arduinoStepMotorsXYController
   PRIVATE
     ${MOTION_CONTROL_REPO_ROOT}/motionControlCore/src/main/cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp)
+    ${CMAKE_CURRENT_LIST_DIR}/src)
 
-target_compile_features(motionControlArduino PRIVATE cxx_std_17)
+target_compile_features(arduinoStepMotorsXYController PRIVATE cxx_std_17)
 
-target_compile_definitions(motionControlArduino
+target_compile_definitions(arduinoStepMotorsXYController
   PRIVATE
     F_CPU=${_BOARD_F_CPU}
     ARDUINO_SERIAL_BAUD=${_BOARD_MONITOR_BAUD}
     ${_BOARD_DEFINE})
 
-target_compile_options(motionControlArduino
+target_compile_options(arduinoStepMotorsXYController
   PRIVATE
     -mmcu=${_BOARD_MCU}
     -Wall
@@ -105,32 +105,32 @@ target_compile_options(motionControlArduino
     -fno-exceptions
     -fno-rtti)
 
-target_link_options(motionControlArduino
+target_link_options(arduinoStepMotorsXYController
   PRIVATE
     -mmcu=${_BOARD_MCU}
     -Wl,--gc-sections)
 
 set(MOTIONCONTROL_HEX_FILE
-  "${CMAKE_CURRENT_BINARY_DIR}/motionControlArduino.hex")
+  "${CMAKE_CURRENT_BINARY_DIR}/arduinoStepMotorsXYController.hex")
 
 add_custom_command(
   OUTPUT ${MOTIONCONTROL_HEX_FILE}
   COMMAND ${AVR_OBJCOPY} -O ihex -R .eeprom
-    $<TARGET_FILE:motionControlArduino> ${MOTIONCONTROL_HEX_FILE}
-  DEPENDS motionControlArduino
+    $<TARGET_FILE:arduinoStepMotorsXYController> ${MOTIONCONTROL_HEX_FILE}
+  DEPENDS arduinoStepMotorsXYController
   COMMENT "Generating Intel HEX firmware")
 
-add_custom_target(motionControlArduinoHex ALL
+add_custom_target(arduinoStepMotorsXYControllerHex ALL
   DEPENDS ${MOTIONCONTROL_HEX_FILE})
 
-add_custom_target(motionControlArduinoSize
+add_custom_target(arduinoStepMotorsXYControllerSize
   COMMAND ${AVR_SIZE} --mcu=${_BOARD_MCU} --format=avr
-    $<TARGET_FILE:motionControlArduino>
-  DEPENDS motionControlArduino
+    $<TARGET_FILE:arduinoStepMotorsXYController>
+  DEPENDS arduinoStepMotorsXYController
   COMMENT "Printing AVR firmware size")
 
 if(AVRDUDE)
-  add_custom_target(motionControlArduinoUpload
+  add_custom_target(arduinoStepMotorsXYControllerUpload
     COMMAND ${AVRDUDE}
       -p ${_BOARD_MCU}
       -c ${_BOARD_PROGRAMMER}
@@ -138,7 +138,7 @@ if(AVRDUDE)
       -b ${_BOARD_UPLOAD_BAUD}
       -D
       -U flash:w:${MOTIONCONTROL_HEX_FILE}:i
-    DEPENDS motionControlArduinoHex
+    DEPENDS arduinoStepMotorsXYControllerHex
     COMMENT "Uploading firmware with avrdude")
 endif()
 
@@ -153,18 +153,18 @@ else()
 endif()
 
 if(_PY_SERIAL_RESULT EQUAL 0)
-  add_custom_target(motionControlArduinoMonitor
+  add_custom_target(arduinoStepMotorsXYControllerMonitor
     COMMAND ${Python3_EXECUTABLE} -m serial.tools.miniterm
       ${ARDUINO_PORT} ${_BOARD_MONITOR_BAUD}
     COMMENT "Opening serial monitor with pyserial miniterm"
     USES_TERMINAL)
 elseif(PICOCOM)
-  add_custom_target(motionControlArduinoMonitor
+  add_custom_target(arduinoStepMotorsXYControllerMonitor
     COMMAND ${PICOCOM} --baud ${_BOARD_MONITOR_BAUD} ${ARDUINO_PORT}
     COMMENT "Opening serial monitor with picocom"
     USES_TERMINAL)
 elseif(CMAKE_HOST_UNIX)
-  add_custom_target(motionControlArduinoMonitor
+  add_custom_target(arduinoStepMotorsXYControllerMonitor
     COMMAND ${MOTION_CONTROL_REPO_ROOT}/scripts/serial-monitor.sh
       ${ARDUINO_PORT} ${_BOARD_MONITOR_BAUD}
     COMMENT "Opening serial monitor with stty/cat"

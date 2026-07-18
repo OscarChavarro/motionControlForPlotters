@@ -1,8 +1,9 @@
-#include "platform/arduino/GpioLed.h"
-#include "platform/arduino/SystemClock.h"
-#include "platform/arduino/UartSerial.h"
+#include "GpioLed.h"
+#include "SystemClock.h"
+#include "UartSerial.h"
 
-int main()
+int
+main()
 {
     SystemClock::initialize();
     GpioLed led;

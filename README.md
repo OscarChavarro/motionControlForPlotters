@@ -23,7 +23,7 @@ The rasterizer does not draw into a framebuffer. Instead, callers provide callba
 
 ## Platform
 
-The implemented platform target is `platform/arduino`, which builds AVR firmware without the Arduino IDE.
+The implemented platform target is `platform/arduinoStepMotorsXYController`, which builds AVR firmware without the Arduino IDE. Its platform-specific C++ code lives directly under `platform/arduinoStepMotorsXYController/src`.
 
 It provides:
 
@@ -84,7 +84,7 @@ cmake --build build --target arduino_hex
 The generated firmware is written to:
 
 ```text
-build/platform-arduino/motionControlArduino.hex
+build/platform-arduinoStepMotorsXYController/arduinoStepMotorsXYController.hex
 ```
 
 ## Upload
@@ -106,7 +106,7 @@ Open the serial monitor through the CMake target:
 cmake --build build --target arduino_monitor
 ```
 
-The monitor target uses `pyserial` miniterm when available, then falls back to `picocom` or `screen` if either is installed.
+The monitor target uses `pyserial` miniterm when available, then falls back to `picocom` or the repository's shell serial monitor.
 
 ## Configuration
 

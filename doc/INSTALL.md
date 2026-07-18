@@ -44,7 +44,7 @@ cmake --build build --target arduino_hex
 El `.hex` queda en:
 
 ```text
-build/platform-arduino/motionControlArduino.hex
+build/platform-arduinoStepMotorsXYController/arduinoStepMotorsXYController.hex
 ```
 
 ## Parámetros configurables
@@ -74,18 +74,18 @@ cmake --build build --target arduino_hex
 Si `avrdude` está instalado:
 
 ```bash
-cmake --build build/platform-arduino --target motionControlArduinoUpload
+cmake --build build/platform-arduinoStepMotorsXYController --target arduinoStepMotorsXYControllerUpload
 ```
 
 ## Monitor serial por CLI
 
-Si el entorno tiene `pyserial`, el target `motionControlArduinoMonitor` usa:
+Si el entorno tiene `pyserial`, el target `arduinoStepMotorsXYControllerMonitor` usa:
 
 ```bash
 python3 -m serial.tools.miniterm <puerto> <baud>
 ```
 
-Si no, el build intenta usar `picocom` o `screen` si están instalados.
+Si no, el build intenta usar `picocom` o el monitor serial shell del repositorio.
 
 ## Permisos de puerto serie
 

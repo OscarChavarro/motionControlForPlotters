@@ -1,4 +1,4 @@
-#include "platform/arduino/GpioLed.h"
+#include "GpioLed.h"
 
 #include <avr/io.h>
 

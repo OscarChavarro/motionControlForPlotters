@@ -1,4 +1,4 @@
-#include "platform/arduino/UartSerial.h"
+#include "UartSerial.h"
 
 #include <avr/io.h>
 

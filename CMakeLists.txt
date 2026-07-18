@@ -42,30 +42,32 @@ if(MOTION_CONTROL_ENABLE_ARDUINO_IN_TREE)
       "-DCMAKE_TOOLCHAIN_FILE=${MOTIONCONTROL_ARDUINO_TOOLCHAIN}")
   endif()
 
-  add_subdirectory(platform/arduino platform-arduino)
+  add_subdirectory(platform/arduinoStepMotorsXYController
+    platform-arduinoStepMotorsXYController)
 
   add_custom_target(arduino_build
-    DEPENDS motionControlArduino)
+    DEPENDS arduinoStepMotorsXYController)
 
   add_custom_target(arduino_hex
-    DEPENDS motionControlArduinoHex)
+    DEPENDS arduinoStepMotorsXYControllerHex)
 
-  if(TARGET motionControlArduinoUpload)
+  if(TARGET arduinoStepMotorsXYControllerUpload)
     add_custom_target(arduino_upload
-      DEPENDS motionControlArduinoUpload)
+      DEPENDS arduinoStepMotorsXYControllerUpload)
   endif()
 
-  if(TARGET motionControlArduinoMonitor)
+  if(TARGET arduinoStepMotorsXYControllerMonitor)
     add_custom_target(arduino_monitor
-      DEPENDS motionControlArduinoMonitor)
+      DEPENDS arduinoStepMotorsXYControllerMonitor)
   endif()
 else()
-  set(MOTIONCONTROL_ARDUINO_BINARY_DIR "${CMAKE_BINARY_DIR}/platform-arduino")
+  set(MOTIONCONTROL_ARDUINO_BINARY_DIR
+    "${CMAKE_BINARY_DIR}/platform-arduinoStepMotorsXYController")
 
   add_custom_target(arduino_configure
     COMMAND
       ${CMAKE_COMMAND}
-      -S ${MOTION_CONTROL_REPO_ROOT}/platform/arduino
+      -S ${MOTION_CONTROL_REPO_ROOT}/platform/arduinoStepMotorsXYController
       -B ${MOTIONCONTROL_ARDUINO_BINARY_DIR}
       -DCMAKE_TOOLCHAIN_FILE=${MOTIONCONTROL_ARDUINO_TOOLCHAIN}
       -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
@@ -85,19 +87,19 @@ else()
     VERBATIM)
 
   add_custom_target(arduino_hex
-    COMMAND ${CMAKE_COMMAND} --build ${MOTIONCONTROL_ARDUINO_BINARY_DIR} --target motionControlArduinoHex
+    COMMAND ${CMAKE_COMMAND} --build ${MOTIONCONTROL_ARDUINO_BINARY_DIR} --target arduinoStepMotorsXYControllerHex
     DEPENDS arduino_configure
     COMMENT "Generating Arduino .hex firmware"
     VERBATIM)
 
   add_custom_target(arduino_upload
-    COMMAND ${CMAKE_COMMAND} --build ${MOTIONCONTROL_ARDUINO_BINARY_DIR} --target motionControlArduinoUpload
+    COMMAND ${CMAKE_COMMAND} --build ${MOTIONCONTROL_ARDUINO_BINARY_DIR} --target arduinoStepMotorsXYControllerUpload
     DEPENDS arduino_configure
     COMMENT "Uploading Arduino firmware"
     VERBATIM)
 
   add_custom_target(arduino_monitor
-    COMMAND ${CMAKE_COMMAND} --build ${MOTIONCONTROL_ARDUINO_BINARY_DIR} --target motionControlArduinoMonitor
+    COMMAND ${CMAKE_COMMAND} --build ${MOTIONCONTROL_ARDUINO_BINARY_DIR} --target arduinoStepMotorsXYControllerMonitor
     DEPENDS arduino_configure
     COMMENT "Opening Arduino serial monitor"
     VERBATIM)

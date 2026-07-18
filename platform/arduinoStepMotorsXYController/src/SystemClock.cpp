@@ -1,4 +1,4 @@
-#include "platform/arduino/SystemClock.h"
+#include "SystemClock.h"
 
 #include <avr/interrupt.h>
 #include <avr/io.h>
