@@ -4,17 +4,46 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
-baud="${ARDUINO_MONITOR_BAUD:-9600}"
+build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-mega2560-debug}"
+baud="${ARDUINO_MONITOR_BAUD:-1000000}"
+
+read_cache_value() {
+  local key="$1"
+  local cache_file="${build_dir}/CMakeCache.txt"
+
+  if [ -f "${cache_file}" ]; then
+    awk -F= -v key="${key}" '$1 ~ "^" key ":" {print $2; exit}' "${cache_file}"
+  fi
+}
 
 select_serial_port() {
   local ports=()
   local port
 
-  for port in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/ttyACM* /dev/ttyUSB*; do
-    if [ -e "${port}" ]; then
+  if python3 -m serial.tools.list_ports -v >/dev/null 2>&1; then
+    while IFS= read -r port; do
       ports+=("${port}")
-    fi
-  done
+    done < <(python3 - <<'PY'
+from serial.tools import list_ports
+
+for port in list_ports.comports():
+    device = port.device
+    if (
+        "usbmodem" in device
+        or "usbserial" in device
+        or device.startswith("/dev/ttyACM")
+        or device.startswith("/dev/ttyUSB")
+    ):
+        print(device)
+PY
+)
+  else
+    for port in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/ttyACM* /dev/ttyUSB*; do
+      if [ -e "${port}" ]; then
+        ports+=("${port}")
+      fi
+    done
+  fi
 
   if [ "${#ports[@]}" -eq 0 ]; then
     echo "No serial ports found. Connect the board and try again." >&2
@@ -51,4 +80,13 @@ port="$(select_serial_port)"
 cd "${repo_root}"
 
 cmake --preset "${preset}" -DARDUINO_PORT="${port}" >/dev/null
-"${script_dir}/serial-monitor.sh" "${port}" "${baud}"
+cached_baud="$(read_cache_value "ARDUINO_MONITOR_BAUD")"
+if [ -n "${cached_baud}" ]; then
+  baud="${cached_baud}"
+fi
+
+if python3 -c "import serial" >/dev/null 2>&1; then
+  python3 "${script_dir}/serial-monitor.py" "${port}" "${baud}"
+else
+  "${script_dir}/serial-monitor.sh" "${port}" "${baud}"
+fi

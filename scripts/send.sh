@@ -10,11 +10,30 @@ select_serial_port() {
   local ports=()
   local port
 
-  for port in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/ttyACM* /dev/ttyUSB*; do
-    if [ -e "${port}" ]; then
+  if python3 -m serial.tools.list_ports -v >/dev/null 2>&1; then
+    while IFS= read -r port; do
       ports+=("${port}")
-    fi
-  done
+    done < <(python3 - <<'PY'
+from serial.tools import list_ports
+
+for port in list_ports.comports():
+    device = port.device
+    if (
+        "usbmodem" in device
+        or "usbserial" in device
+        or device.startswith("/dev/ttyACM")
+        or device.startswith("/dev/ttyUSB")
+    ):
+        print(device)
+PY
+)
+  else
+    for port in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/ttyACM* /dev/ttyUSB*; do
+      if [ -e "${port}" ]; then
+        ports+=("${port}")
+      fi
+    done
+  fi
 
   if [ "${#ports[@]}" -eq 0 ]; then
     echo "No serial ports found. Connect the board and try again." >&2

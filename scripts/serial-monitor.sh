@@ -12,6 +12,7 @@ saved_tty_settings=""
 platform="$(uname -s)"
 reader_pid=""
 cleaned_up=0
+serial_fd_path=""
 
 if [ ! -e "$port" ]; then
   echo "Serial port not found: $port" >&2
@@ -40,6 +41,8 @@ cleanup() {
   fi
   cleaned_up=1
   stop_reader
+  exec 3<&- 2>/dev/null || true
+  exec 3>&- 2>/dev/null || true
   restore_terminal
 }
 
@@ -54,12 +57,19 @@ trap handle_interrupt INT TERM
 
 echo "Serial monitor: $port at $baud baud, 8N1. Press Ctrl-C to exit." >&2
 
+exec 3<>"${port}"
+if [ -e /dev/fd/3 ]; then
+  serial_fd_path="/dev/fd/3"
+else
+  serial_fd_path="${port}"
+fi
+
 case "${platform}" in
   Darwin|*BSD)
-    stty -f "$port" "$baud" cs8 -cstopb -parenb raw -echo
+    stty -f "${serial_fd_path}" "$baud" cs8 -cstopb -parenb raw -echo
     ;;
   Linux)
-    stty -F "$port" "$baud" cs8 -cstopb -parenb raw -echo
+    stty -F "${serial_fd_path}" "$baud" cs8 -cstopb -parenb raw -echo
     ;;
   *)
     echo "Unsupported host platform for serial monitor: ${platform}" >&2
@@ -67,7 +77,7 @@ case "${platform}" in
     ;;
 esac
 
-cat "$port" &
+cat <&3 &
 reader_pid="$!"
 
 while kill -0 "${reader_pid}" 2>/dev/null; do
