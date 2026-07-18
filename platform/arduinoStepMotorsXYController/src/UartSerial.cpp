@@ -41,6 +41,16 @@ void UartSerial::writeString(const char* value)
     }
 }
 
+void UartSerial::writeSigned(int32_t value)
+{
+    if (value < 0L) {
+        writeChar('-');
+        writeUnsigned(static_cast<uint32_t>(-(value + 1L)) + 1UL);
+        return;
+    }
+    writeUnsigned(static_cast<uint32_t>(value));
+}
+
 void UartSerial::writeUnsigned(uint32_t value)
 {
     char buffer[11];

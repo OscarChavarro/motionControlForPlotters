@@ -10,6 +10,7 @@ public:
     char readChar();
     void writeChar(char value);
     void writeString(const char* value);
+    void writeSigned(int32_t value);
     void writeUnsigned(uint32_t value);
     void writeVoltageMillivolts(uint16_t millivolts);
     void writeLine(const char* value);

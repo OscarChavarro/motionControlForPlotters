@@ -1,113 +1,78 @@
 #include "BuildInfo.h"
 #include "ExternalPowerSupplyDetector.h"
-#include "GpioLed.h"
+#include "StepperMotorController.h"
 #include "SystemClock.h"
 #include "UartSerial.h"
-
-static bool
-isCommand(const char* command, const char* expected)
-{
-    uint8_t index = 0;
-
-    while (expected[index] != '\0') {
-        if (command[index] != expected[index]) {
-            return false;
-        }
-        ++index;
-    }
-
-    return command[index] == '\0';
-}
 
 int
 main()
 {
     SystemClock::initialize();
-    GpioLed led;
-    led.initialize();
 
-    UartSerial serial;
-    serial.initialize(ARDUINO_SERIAL_BAUD);
-    serial.writeString("motionControl Arduino boot (build ");
-    serial.writeString(MOTION_CONTROL_BUILD_TIMESTAMP);
-    serial.writeLine(")");
-    serial.writeLine("blink example started");
+    StepperMotorController stepperMotorController(
+        STEPPER_MOTOR_STEP_PIN,
+        STEPPER_MOTOR_DIRECTION_PIN,
+        STEPPER_MOTOR_STEP_PULSE_MICROSECONDS,
+        STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS);
+    stepperMotorController.initialize();
+    stepperMotorController.configureRepeatingTrapezoid(
+        STEPPER_MOTOR_MAX_STEPS_PER_SECOND,
+        STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
+        STEPPER_MOTOR_CRUISE_MILLISECONDS,
+        STEPPER_MOTOR_DECELERATION_MILLISECONDS);
 
     ExternalPowerSupplyDetector externalPowerSupplyDetector;
     externalPowerSupplyDetector.initialize();
 
-    uint32_t lastToggle = SystemClock::millis();
-    uint32_t lastPsuErrorPrint = SystemClock::millis() -
-        static_cast<uint32_t>(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL);
-    bool ledState = false;
+    UartSerial serial;
+    serial.initialize(ARDUINO_SERIAL_BAUD);
+    serial.writeString("motionControl boot build=");
+    serial.writeLine(MOTION_CONTROL_BUILD_TIMESTAMP);
+    serial.writeLine(
+        "PSU filter: sample=10ms IIR=1/8 enable>=11.600V/100ms "
+        "disable<11.200V/100ms");
+
+    uint32_t lastTelemetryPrint = SystemClock::millis();
     bool previousExternalPowerSupplyAvailable = false;
-    bool verboseMessages = true;
-    char commandBuffer[32];
-    uint8_t commandBufferLength = 0;
 
     //noinspection CppDFAEndlessLoop
     // NOLINTNEXTLINE(bugprone-infinite-loop)
     for (;;) {
         const uint32_t now = SystemClock::millis();
-        if ((now - lastToggle) >= 1000UL) {
-            lastToggle = now;
-            ledState = !ledState;
-            led.write(ledState);
-            if (verboseMessages) {
-                serial.writeLine(ledState ? "LED=ON" : "LED=OFF");
-            }
-        }
-        const uint16_t externalSupplyMillivolts =
-            externalPowerSupplyDetector.readExternalSupplyMillivolts();
+        const bool newPowerSupplySample =
+            externalPowerSupplyDetector.update(now);
         const bool externalPowerSupplyAvailable =
-            externalPowerSupplyDetector.isExternalPowerSupplyAvailable(externalSupplyMillivolts);
+            externalPowerSupplyDetector.isExternalPowerSupplyAvailable();
 
-        while (serial.isReadAvailable()) {
-            const char input = serial.readChar();
-
-            if (input == '\r' || input == '\n') {
-                commandBuffer[commandBufferLength] = '\0';
-                if (isCommand(commandBuffer, "voltage")) {
-                    serial.writeString("Voltage: ");
-                    serial.writeVoltageMillivolts(externalSupplyMillivolts);
-                    serial.writeLine("");
-                }
-                else if (isCommand(commandBuffer, "verbose off")) {
-                    verboseMessages = false;
-                    serial.writeLine("Verbose: off");
-                }
-                else if (isCommand(commandBuffer, "verbose on")) {
-                    verboseMessages = true;
-                    serial.writeLine("Verbose: on");
-                }
-                commandBufferLength = 0;
-            }
-            else if (input == '\b' || input == 127) {
-                if (commandBufferLength > 0U) {
-                    --commandBufferLength;
-                }
-            }
-            else if (commandBufferLength < (sizeof(commandBuffer) - 1U)) {
-                commandBuffer[commandBufferLength] = input;
-                ++commandBufferLength;
-            }
-        }
-
-        if (!externalPowerSupplyAvailable &&
-            (previousExternalPowerSupplyAvailable ||
-            ((now - lastPsuErrorPrint) >=
-                static_cast<uint32_t>(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL)))) {
-            lastPsuErrorPrint = now;
-            serial.writeString("ERROR: External power supply not found or turned off. Detected voltage: ");
-            serial.writeVoltageMillivolts(externalSupplyMillivolts);
+        if (newPowerSupplySample &&
+            externalPowerSupplyAvailable !=
+                previousExternalPowerSupplyAvailable) {
+            serial.writeString("EVENT PSU=");
+            serial.writeString(
+                externalPowerSupplyAvailable ? "READY" : "LOST");
+            serial.writeString(" VIN=");
+            serial.writeVoltageMillivolts(
+                externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
             serial.writeLine("");
         }
-        else if (externalPowerSupplyAvailable &&
-            !previousExternalPowerSupplyAvailable) {
-            serial.writeString("External power supply found! Detected voltage: ");
-            serial.writeVoltageMillivolts(externalSupplyMillivolts);
+        previousExternalPowerSupplyAvailable =
+            externalPowerSupplyAvailable;
+
+        stepperMotorController.update(now, externalPowerSupplyAvailable);
+
+        if ((now - lastTelemetryPrint) >= 500UL) {
+            lastTelemetryPrint = now;
+            serial.writeString("VIN: ");
+            serial.writeVoltageMillivolts(
+                externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+            serial.writeString(" PSU: ");
+            serial.writeString(externalPowerSupplyAvailable ? "OK" : "OFF");
+            serial.writeString(" Dir: ");
+            serial.writeString(
+                stepperMotorController.directionForward() ? "F" : "R");
+            serial.writeString(" Speed: ");
+            serial.writeUnsigned(stepperMotorController.speedStepsPerSecond());
             serial.writeLine("");
         }
-        previousExternalPowerSupplyAvailable = externalPowerSupplyAvailable;
     }
 }

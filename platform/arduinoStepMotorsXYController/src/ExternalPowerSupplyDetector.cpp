@@ -10,11 +10,80 @@ void ExternalPowerSupplyDetector::initialize()
         (1U << ADPS2) |
         (1U << ADPS1) |
         (1U << ADPS0));
+
+    m_lastSampleMilliseconds = 0;
+    m_rawExternalSupplyMillivolts = 0;
+    m_filteredExternalSupplyMillivolts = 0;
+    m_consecutiveGoodSamples = 0;
+    m_consecutiveBadSamples = 0;
+    m_externalPowerSupplyAvailable = false;
+    m_hasSample = false;
+}
+
+bool ExternalPowerSupplyDetector::update(uint32_t nowMilliseconds)
+{
+    const uint32_t sampleIntervalMilliseconds = 10UL;
+    const uint8_t stableSampleCount = 10U;
+
+    if (m_hasSample &&
+        (nowMilliseconds - m_lastSampleMilliseconds) <
+            sampleIntervalMilliseconds) {
+        return false;
+    }
+
+    m_lastSampleMilliseconds = nowMilliseconds;
+    m_rawExternalSupplyMillivolts = readExternalSupplyMillivolts();
+
+    if (!m_hasSample) {
+        m_filteredExternalSupplyMillivolts =
+            m_rawExternalSupplyMillivolts;
+        m_hasSample = true;
+    }
+    else {
+        const uint32_t filteredAccumulator =
+            static_cast<uint32_t>(m_filteredExternalSupplyMillivolts) * 7UL +
+            m_rawExternalSupplyMillivolts + 4UL;
+        m_filteredExternalSupplyMillivolts =
+            static_cast<uint16_t>(filteredAccumulator / 8UL);
+    }
+
+    if (m_externalPowerSupplyAvailable) {
+        m_consecutiveGoodSamples = 0;
+        if (m_filteredExternalSupplyMillivolts <
+            disconnectExternalSupplyMillivolts()) {
+            if (m_consecutiveBadSamples < stableSampleCount) {
+                ++m_consecutiveBadSamples;
+            }
+            if (m_consecutiveBadSamples >= stableSampleCount) {
+                m_externalPowerSupplyAvailable = false;
+            }
+        }
+        else {
+            m_consecutiveBadSamples = 0;
+        }
+    }
+    else {
+        m_consecutiveBadSamples = 0;
+        if (m_filteredExternalSupplyMillivolts >=
+            minimumExternalSupplyMillivolts()) {
+            if (m_consecutiveGoodSamples < stableSampleCount) {
+                ++m_consecutiveGoodSamples;
+            }
+            if (m_consecutiveGoodSamples >= stableSampleCount) {
+                m_externalPowerSupplyAvailable = true;
+            }
+        }
+        else {
+            m_consecutiveGoodSamples = 0;
+        }
+    }
+
+    return true;
 }
 
 bool ExternalPowerSupplyDetector::isExternalPowerSupplyAvailable()
 {
-    return readExternalSupplyMillivolts() >= minimumExternalSupplyMillivolts();
+    return m_externalPowerSupplyAvailable;
 }
 
 bool ExternalPowerSupplyDetector::isExternalPowerSupplyAvailable(
@@ -51,6 +120,11 @@ uint16_t ExternalPowerSupplyDetector::readExternalSupplyMillivolts()
     return static_cast<uint16_t>(externalSupplyMillivolts);
 }
 
+uint16_t ExternalPowerSupplyDetector::filteredExternalSupplyMillivolts() const
+{
+    return m_filteredExternalSupplyMillivolts;
+}
+
 uint16_t ExternalPowerSupplyDetector::readAdc0()
 {
     ADMUX = static_cast<uint8_t>((ADMUX & 0xF0U) | 0U);
@@ -72,4 +146,14 @@ uint16_t ExternalPowerSupplyDetector::minimumExternalSupplyMillivolts()
         return 65535U;
     }
     return static_cast<uint16_t>(minimumMillivolts);
+}
+
+uint16_t ExternalPowerSupplyDetector::disconnectExternalSupplyMillivolts()
+{
+    const uint16_t hysteresisMillivolts = 400U;
+    const uint16_t minimumMillivolts = minimumExternalSupplyMillivolts();
+    if (minimumMillivolts <= hysteresisMillivolts) {
+        return 0;
+    }
+    return static_cast<uint16_t>(minimumMillivolts - hysteresisMillivolts);
 }

@@ -16,9 +16,9 @@ set(ARDUINO_PROGRAMMER "" CACHE STRING "Override avrdude programmer")
 set(ARDUINO_PORT "/dev/ttyACM0" CACHE STRING "Upload/monitor serial port")
 set(ARDUINO_UPLOAD_BAUD "" CACHE STRING "Override avrdude baud rate")
 set(ARDUINO_MONITOR_BAUD "" CACHE STRING "Override monitor serial baud rate")
-set(EXTERNAL_VOLTAGE_PSU "5" CACHE STRING
+set(EXTERNAL_VOLTAGE_PSU "12" CACHE STRING
   "Expected external power supply voltage in volts")
-set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "0.1" CACHE STRING
+set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "0.4" CACHE STRING
   "Allowed external power supply voltage tolerance in volts")
 set(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS "100000" CACHE STRING
   "Voltage divider resistor in ohms between VIN and A0")
@@ -26,6 +26,31 @@ set(EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS "47000" CACHE STRING
   "Voltage divider resistor in ohms between A0 and GND")
 set(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL "5000" CACHE STRING
   "Interval in milliseconds for missing PSU error messages")
+set(STEPPER_MOTOR_STEP_PIN "3" CACHE STRING
+  "Arduino digital pin connected to the A4988 STEP input")
+set(STEPPER_MOTOR_DIRECTION_PIN "2" CACHE STRING
+  "Arduino digital pin connected to the A4988 DIR input")
+set(STEPPER_MOTOR_STEP_PULSE_MICROSECONDS "5" CACHE STRING
+  "A4988 STEP high and low pulse width in microseconds")
+set(STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS "5" CACHE STRING
+  "Delay between changing DIR and emitting the STEP rising edge")
+set(STEPPER_MOTOR_MAX_STEPS_PER_SECOND "711" CACHE STRING
+  "Maximum speed for the example trapezoid profile, in STEP pulses per second")
+set(STEPPER_MOTOR_ACCELERATION_MILLISECONDS "1000" CACHE STRING
+  "Acceleration time for the example trapezoid profile")
+set(STEPPER_MOTOR_CRUISE_MILLISECONDS "8000" CACHE STRING
+  "Cruise time for the example trapezoid profile")
+set(STEPPER_MOTOR_DECELERATION_MILLISECONDS "1000" CACHE STRING
+  "Deceleration time for the example trapezoid profile")
+
+if(STEPPER_MOTOR_STEP_PIN STREQUAL "0" OR
+    STEPPER_MOTOR_STEP_PIN STREQUAL "1" OR
+    STEPPER_MOTOR_DIRECTION_PIN STREQUAL "0" OR
+    STEPPER_MOTOR_DIRECTION_PIN STREQUAL "1")
+  message(FATAL_ERROR
+    "Stepper motor pins 0 and 1 are not supported while UART serial logging is enabled. "
+    "Use D2 for STEP and D3 for DIR.")
+endif()
 
 string(TOLOWER "${ARDUINO_BOARD}" ARDUINO_BOARD_NORMALIZED)
 
@@ -97,6 +122,7 @@ set(PLATFORM_ARDUINO_SOURCES
   src/main.cpp
   src/ExternalPowerSupplyDetector.cpp
   src/GpioLed.cpp
+  src/StepperMotorController.cpp
   src/SystemClock.cpp
   src/UartSerial.cpp
 )
@@ -122,6 +148,14 @@ target_compile_definitions(arduinoStepMotorsXYController
     EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS=${EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS}
     EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS=${EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS}
     PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL=${PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL}
+    STEPPER_MOTOR_STEP_PIN=${STEPPER_MOTOR_STEP_PIN}
+    STEPPER_MOTOR_DIRECTION_PIN=${STEPPER_MOTOR_DIRECTION_PIN}
+    STEPPER_MOTOR_STEP_PULSE_MICROSECONDS=${STEPPER_MOTOR_STEP_PULSE_MICROSECONDS}
+    STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS=${STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS}
+    STEPPER_MOTOR_MAX_STEPS_PER_SECOND=${STEPPER_MOTOR_MAX_STEPS_PER_SECOND}
+    STEPPER_MOTOR_ACCELERATION_MILLISECONDS=${STEPPER_MOTOR_ACCELERATION_MILLISECONDS}
+    STEPPER_MOTOR_CRUISE_MILLISECONDS=${STEPPER_MOTOR_CRUISE_MILLISECONDS}
+    STEPPER_MOTOR_DECELERATION_MILLISECONDS=${STEPPER_MOTOR_DECELERATION_MILLISECONDS}
     ${_BOARD_DEFINE})
 
 target_compile_options(arduinoStepMotorsXYController

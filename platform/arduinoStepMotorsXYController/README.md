@@ -6,8 +6,32 @@ Firmware target for an Arduino UNO or Mega2560-based XY step motor controller.
 
 | Pin | UNO | MEGA2560 | Direction | Use |
 |---|---|---|---|---|
+| 2 | D2 / PD2 | D2 / PE4 | Output | A4988 DIR input |
+| 3 | D3 / PD3 | D3 / PE5 | Output | A4988 STEP input |
 | 13 | D13 / PB5 | D13 / PB7 | Output | Testing LED |
 | A0 | ADC0 / PC0 | ADC0 / PF0 | Analog input | External power supply unit detection via voltage divisor |
+
+The A4988 driver receives one motor step on each rising edge of `STEP`. The `DIR` signal selects the direction used by the next `STEP` rising edge. The firmware uses `D3` for `STEP` and `D2` for `DIR` by default, leaving `D0` and `D1` free for the USB serial console.
+
+The stepper motor controller is configured with:
+
+```bash
+-DSTEPPER_MOTOR_STEP_PIN=3
+-DSTEPPER_MOTOR_DIRECTION_PIN=2
+-DSTEPPER_MOTOR_STEP_PULSE_MICROSECONDS=5
+-DSTEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS=5
+-DSTEPPER_MOTOR_MAX_STEPS_PER_SECOND=711
+-DSTEPPER_MOTOR_ACCELERATION_MILLISECONDS=1000
+-DSTEPPER_MOTOR_CRUISE_MILLISECONDS=8000
+-DSTEPPER_MOTOR_DECELERATION_MILLISECONDS=1000
+```
+
+The example motion profile is a repeating trapezoid. In each direction the
+motor accelerates from 0% to 711 microsteps per second for 1 second, runs at
+full speed for 8 seconds, decelerates back to 0 for 1 second, and then repeats
+the same profile in the opposite direction. With a 200-step motor and the
+A4988 configured for 1/16 microstepping, one 10-second profile emits about
+6398 microsteps, or 719.8 degrees: effectively two complete revolutions.
 
 The external power supply detector expects a voltage divider from `VIN` into `A0`. The divider must keep the analog input inside the board's ADC range.
 
@@ -33,8 +57,8 @@ The detector reconstructs the external `VIN` voltage from the measured `A0` volt
 
 | Variable | Default | Used for |
 |---|---:|---|
-| `EXTERNAL_VOLTAGE_PSU` | `5` | Expected external power supply voltage, in volts |
-| `EXTERNAL_VOLTAGE_PSU_TOLERANCE` | `0.1` | Accepted voltage tolerance below `EXTERNAL_VOLTAGE_PSU`, in volts |
+| `EXTERNAL_VOLTAGE_PSU` | `12` | Expected external power supply voltage, in volts |
+| `EXTERNAL_VOLTAGE_PSU_TOLERANCE` | `0.4` | Accepted voltage tolerance below `EXTERNAL_VOLTAGE_PSU`, in volts |
 | `EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS` | `100000` | Resistor between `VIN` and `A0`, in ohms |
 | `EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS` | `47000` | Resistor between `A0` and `GND`, in ohms |
 | `PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL` | `5000` | Minimum interval between missing-PSU error messages, in milliseconds |
@@ -42,13 +66,13 @@ The detector reconstructs the external `VIN` voltage from the measured `A0` volt
 The expected PSU voltage is configured at CMake level with:
 
 ```bash
--DEXTERNAL_VOLTAGE_PSU=5
+-DEXTERNAL_VOLTAGE_PSU=12
 ```
 
 The detector accepts a voltage tolerance around that value:
 
 ```bash
--DEXTERNAL_VOLTAGE_PSU_TOLERANCE=0.1
+-DEXTERNAL_VOLTAGE_PSU_TOLERANCE=0.4
 ```
 
 The voltage divider is configured with:
@@ -64,40 +88,37 @@ The missing-PSU error print interval is configured in milliseconds with:
 -DPSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL=5000
 ```
 
-At runtime, `ExternalPowerSupplyDetector` reads `A0`, converts the ADC reading to millivolts, reconstructs the external `VIN` voltage using the configured resistor divider, and compares it against:
+At runtime, `ExternalPowerSupplyDetector` samples `A0` every 10 ms,
+converts the ADC reading to millivolts, and reconstructs the external `VIN`
+voltage using the configured resistor divider. An IIR filter with a coefficient
+of `1/8` prevents isolated ADC spikes from restarting motion.
+
+The supply becomes available after 10 consecutive filtered samples at or
+above:
 
 ```text
 EXTERNAL_VOLTAGE_PSU - EXTERNAL_VOLTAGE_PSU_TOLERANCE
 ```
 
-With the default values, the external power supply is considered present when the reconstructed voltage is at least `4.9V`.
+With the default values, this requires 100 ms at or above `11.6V`. Once
+available, the supply is declared lost only after 10 consecutive filtered
+samples below `11.2V`. The 400 mV hysteresis prevents repeated transitions
+close to the activation threshold.
 
-When the external power supply transitions from missing to detected, the firmware prints this message once. This happens at startup if the supply is already connected, and again after each disconnect/reconnect cycle:
-
-```text
-External power supply found! Detected voltage: <voltage>V
-```
-
-If the external power supply is missing or below the accepted threshold, the firmware prints this error at most once every `PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL` milliseconds:
+Confirmed supply transitions produce a concise event containing the filtered
+voltage measurement:
 
 ```text
-ERROR: External power supply not found or turned off. Detected voltage: <voltage>V
+EVENT PSU=READY VIN=<voltage>V
+EVENT PSU=LOST VIN=<voltage>V
 ```
 
-# Serial Commands
-
-The firmware accepts line-based commands over the UART serial port. Send the command text followed by Enter.
-
-| Command | Response |
-|---|---|
-| `voltage` | Prints the reconstructed external `VIN` voltage from the `A0` detector |
-| `verbose off` | Disables periodic `LED=ON` and `LED=OFF` serial messages |
-| `verbose on` | Enables periodic `LED=ON` and `LED=OFF` serial messages |
-
-Example response:
+The firmware also emits diagnostic telemetry every 500 ms:
 
 ```text
-Voltage: 5.014V
-Verbose: off
-Verbose: on
+VIN: <filtered-voltage>V PSU: <OK|OFF> Dir: <F|R>
+Speed: <steps-per-second>
 ```
+
+The current motion-profile diagnostic firmware does not accept serial
+commands. UART is reserved for boot, power-supply, and motion telemetry.
