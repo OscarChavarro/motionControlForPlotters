@@ -13,6 +13,16 @@ void UartSerial::initialize(uint32_t baudRate)
     UCSR0C = static_cast<uint8_t>((1U << UCSZ01) | (1U << UCSZ00));
 }
 
+bool UartSerial::isReadAvailable()
+{
+    return (UCSR0A & static_cast<uint8_t>(1U << RXC0)) != 0U;
+}
+
+char UartSerial::readChar()
+{
+    return static_cast<char>(UDR0);
+}
+
 void UartSerial::writeChar(char value)
 {
     while ((UCSR0A & static_cast<uint8_t>(1U << UDRE0)) == 0U) {
@@ -29,6 +39,39 @@ void UartSerial::writeString(const char* value)
         writeChar(*value);
         ++value;
     }
+}
+
+void UartSerial::writeUnsigned(uint32_t value)
+{
+    char buffer[11];
+    uint8_t index = 0;
+
+    if (value == 0U) {
+        writeChar('0');
+        return;
+    }
+
+    while (value > 0U && index < sizeof(buffer)) {
+        buffer[index++] = static_cast<char>('0' + (value % 10U));
+        value /= 10U;
+    }
+
+    while (index > 0U) {
+        writeChar(buffer[--index]);
+    }
+}
+
+void UartSerial::writeVoltageMillivolts(uint16_t millivolts)
+{
+    const uint16_t volts = static_cast<uint16_t>(millivolts / 1000U);
+    const uint16_t fractional = static_cast<uint16_t>(millivolts % 1000U);
+
+    writeUnsigned(volts);
+    writeChar('.');
+    writeChar(static_cast<char>('0' + ((fractional / 100U) % 10U)));
+    writeChar(static_cast<char>('0' + ((fractional / 10U) % 10U)));
+    writeChar(static_cast<char>('0' + (fractional % 10U)));
+    writeChar('V');
 }
 
 void UartSerial::writeLine(const char* value)

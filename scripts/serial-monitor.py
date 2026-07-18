@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import select
 import sys
 
 import serial
@@ -33,10 +34,18 @@ def main():
 
         try:
             while True:
-                data = connection.read(1024)
-                if data:
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.buffer.flush()
+                readable, _, _ = select.select([connection, sys.stdin], [], [])
+                if connection in readable:
+                    data = connection.read(1024)
+                    if data:
+                        sys.stdout.buffer.write(data)
+                        sys.stdout.buffer.flush()
+                if sys.stdin in readable:
+                    line = sys.stdin.readline()
+                    if line == "":
+                        return 0
+                    connection.write(line.encode("utf-8"))
+                    connection.flush()
         except KeyboardInterrupt:
             return 0
 

@@ -81,15 +81,11 @@ cat <&3 &
 reader_pid="$!"
 
 while kill -0 "${reader_pid}" 2>/dev/null; do
-  wait "${reader_pid}" 2>/dev/null && break
-  reader_status="$?"
-  if [ "${reader_status}" -eq 127 ]; then
+  if IFS= read -r line; then
+    printf '%s\r\n' "${line}" >&3
+  else
     break
   fi
-  if [ "${reader_status}" -ge 128 ]; then
-    exit 0
-  fi
-  break
 done
 
 exit 0

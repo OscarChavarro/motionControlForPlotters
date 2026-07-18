@@ -16,6 +16,16 @@ set(ARDUINO_PROGRAMMER "" CACHE STRING "Override avrdude programmer")
 set(ARDUINO_PORT "/dev/ttyACM0" CACHE STRING "Upload/monitor serial port")
 set(ARDUINO_UPLOAD_BAUD "" CACHE STRING "Override avrdude baud rate")
 set(ARDUINO_MONITOR_BAUD "" CACHE STRING "Override monitor serial baud rate")
+set(EXTERNAL_VOLTAGE_PSU "5" CACHE STRING
+  "Expected external power supply voltage in volts")
+set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "0.1" CACHE STRING
+  "Allowed external power supply voltage tolerance in volts")
+set(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS "100000" CACHE STRING
+  "Voltage divider resistor in ohms between VIN and A0")
+set(EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS "47000" CACHE STRING
+  "Voltage divider resistor in ohms between A0 and GND")
+set(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL "5000" CACHE STRING
+  "Interval in milliseconds for missing PSU error messages")
 
 string(TOLOWER "${ARDUINO_BOARD}" ARDUINO_BOARD_NORMALIZED)
 
@@ -69,8 +79,23 @@ find_program(AVRDUDE avrdude)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 find_program(PICOCOM picocom)
 
+execute_process(
+  COMMAND date "+%Y_%m%b%d %l:%M%p"
+  OUTPUT_VARIABLE MOTION_CONTROL_BUILD_TIMESTAMP
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+string(REGEX REPLACE " +" " " MOTION_CONTROL_BUILD_TIMESTAMP
+  "${MOTION_CONTROL_BUILD_TIMESTAMP}")
+string(TOLOWER "${MOTION_CONTROL_BUILD_TIMESTAMP}"
+  MOTION_CONTROL_BUILD_TIMESTAMP)
+
+configure_file(
+  ${CMAKE_CURRENT_LIST_DIR}/src/BuildInfo.h.in
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/BuildInfo.h
+  @ONLY)
+
 set(PLATFORM_ARDUINO_SOURCES
   src/main.cpp
+  src/ExternalPowerSupplyDetector.cpp
   src/GpioLed.cpp
   src/SystemClock.cpp
   src/UartSerial.cpp
@@ -83,7 +108,8 @@ add_executable(arduinoStepMotorsXYController
 target_include_directories(arduinoStepMotorsXYController
   PRIVATE
     ${MOTION_CONTROL_REPO_ROOT}/motionControlCore/src/main/cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src)
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 target_compile_features(arduinoStepMotorsXYController PRIVATE cxx_std_17)
 
@@ -91,6 +117,11 @@ target_compile_definitions(arduinoStepMotorsXYController
   PRIVATE
     F_CPU=${_BOARD_F_CPU}
     ARDUINO_SERIAL_BAUD=${_BOARD_MONITOR_BAUD}
+    EXTERNAL_VOLTAGE_PSU=${EXTERNAL_VOLTAGE_PSU}
+    EXTERNAL_VOLTAGE_PSU_TOLERANCE=${EXTERNAL_VOLTAGE_PSU_TOLERANCE}
+    EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS=${EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS}
+    EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS=${EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS}
+    PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL=${PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL}
     ${_BOARD_DEFINE})
 
 target_compile_options(arduinoStepMotorsXYController
