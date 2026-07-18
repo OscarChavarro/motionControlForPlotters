@@ -1,0 +1,48 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "host-debug",
+      "displayName": "Host Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake-build-host-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "avr-mega2560-debug",
+      "displayName": "AVR Mega2560 Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake-build-avr-mega2560-debug",
+      "toolchainFile": "${sourceDir}/cmake/avr-gcc-toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MOTION_CONTROL_REPO_ROOT": "${sourceDir}",
+        "ARDUINO_BOARD": "mega2560",
+        "ARDUINO_MONITOR_BAUD": "9600",
+        "CMAKE_OSX_ARCHITECTURES": "",
+        "CMAKE_OSX_SYSROOT": "",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": ""
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug"
+    },
+    {
+      "name": "avr-mega2560-debug",
+      "configurePreset": "avr-mega2560-debug",
+      "targets": [
+        "arduino_hex"
+      ]
+    }
+  ]
+}

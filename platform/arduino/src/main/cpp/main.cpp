@@ -1,5 +1,3 @@
-#include <avr/io.h>
-
 #include "platform/arduino/GpioLed.h"
 #include "platform/arduino/SystemClock.h"
 #include "platform/arduino/UartSerial.h"
@@ -18,6 +16,8 @@ int main()
     uint32_t lastToggle = SystemClock::millis();
     bool ledState = false;
 
+    //noinspection CppDFAEndlessLoop
+    // NOLINTNEXTLINE(bugprone-infinite-loop)
     for (;;) {
         const uint32_t now = SystemClock::millis();
         if ((now - lastToggle) >= 1000UL) {

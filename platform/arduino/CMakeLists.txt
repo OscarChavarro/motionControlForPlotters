@@ -24,21 +24,21 @@ if(ARDUINO_BOARD_NORMALIZED STREQUAL "uno")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "arduino")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "115200")
+  set(_BOARD_MONITOR_BAUD "9600")
   set(_BOARD_DEFINE "ARDUINO_AVR_UNO")
 elseif(ARDUINO_BOARD_NORMALIZED STREQUAL "nano")
   set(_BOARD_MCU "atmega328p")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "arduino")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "115200")
+  set(_BOARD_MONITOR_BAUD "9600")
   set(_BOARD_DEFINE "ARDUINO_AVR_NANO")
 elseif(ARDUINO_BOARD_NORMALIZED STREQUAL "mega2560")
   set(_BOARD_MCU "atmega2560")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "wiring")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "115200")
+  set(_BOARD_MONITOR_BAUD "9600")
   set(_BOARD_DEFINE "ARDUINO_AVR_MEGA2560")
 else()
   message(FATAL_ERROR
@@ -68,7 +68,6 @@ find_program(AVR_SIZE avr-size REQUIRED)
 find_program(AVRDUDE avrdude)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 find_program(PICOCOM picocom)
-find_program(SCREEN screen)
 
 set(PLATFORM_ARDUINO_SOURCES
   src/main/cpp/main.cpp
@@ -164,10 +163,11 @@ elseif(PICOCOM)
     COMMAND ${PICOCOM} --baud ${_BOARD_MONITOR_BAUD} ${ARDUINO_PORT}
     COMMENT "Opening serial monitor with picocom"
     USES_TERMINAL)
-elseif(SCREEN)
+elseif(CMAKE_HOST_UNIX)
   add_custom_target(motionControlArduinoMonitor
-    COMMAND ${SCREEN} ${ARDUINO_PORT} ${_BOARD_MONITOR_BAUD}
-    COMMENT "Opening serial monitor with screen"
+    COMMAND ${MOTION_CONTROL_REPO_ROOT}/scripts/serial-monitor.sh
+      ${ARDUINO_PORT} ${_BOARD_MONITOR_BAUD}
+    COMMENT "Opening serial monitor with stty/cat"
     USES_TERMINAL)
 endif()
 
