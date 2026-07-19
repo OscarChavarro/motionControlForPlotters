@@ -12,7 +12,7 @@ StepperMotorController::StepperMotorController(
       m_directionPin(directionPin),
       m_stepPulseMicroseconds(stepPulseMicroseconds),
       m_directionSetupMicroseconds(directionSetupMicroseconds),
-      m_maxStepsPerSecond(0),
+      m_maxMilliStepsPerSecond(0),
       m_accelerationMilliseconds(0),
       m_cruiseMilliseconds(0),
       m_decelerationMilliseconds(0),
@@ -20,7 +20,7 @@ StepperMotorController::StepperMotorController(
       m_lastUpdateMilliseconds(0),
       m_stepAccumulator(0),
       m_position(0),
-      m_speedStepsPerSecond(0),
+      m_speedMilliStepsPerSecond(0),
       m_directionForward(false),
       m_initialized(false)
 {
@@ -35,19 +35,19 @@ void StepperMotorController::initialize()
 }
 
 void StepperMotorController::configureRepeatingTrapezoid(
-    uint16_t maxStepsPerSecond,
+    uint32_t maxMilliStepsPerSecond,
     uint16_t accelerationMilliseconds,
     uint16_t cruiseMilliseconds,
     uint16_t decelerationMilliseconds)
 {
-    m_maxStepsPerSecond = maxStepsPerSecond;
+    m_maxMilliStepsPerSecond = maxMilliStepsPerSecond;
     m_accelerationMilliseconds = accelerationMilliseconds;
     m_cruiseMilliseconds = cruiseMilliseconds;
     m_decelerationMilliseconds = decelerationMilliseconds;
     m_profileStartMilliseconds = 0;
     m_lastUpdateMilliseconds = 0;
     m_stepAccumulator = 0;
-    m_speedStepsPerSecond = 0;
+    m_speedMilliStepsPerSecond = 0;
     m_directionForward = false;
     m_initialized = false;
 }
@@ -57,7 +57,7 @@ void StepperMotorController::update(uint32_t nowMilliseconds, bool enabled)
     if (!enabled || profileCycleDurationMilliseconds() == 0UL) {
         m_lastUpdateMilliseconds = nowMilliseconds;
         m_stepAccumulator = 0;
-        m_speedStepsPerSecond = 0;
+        m_speedMilliStepsPerSecond = 0;
         m_initialized = false;
         return;
     }
@@ -87,12 +87,14 @@ void StepperMotorController::update(uint32_t nowMilliseconds, bool enabled)
         profileElapsedMilliseconds % cycleDurationMilliseconds;
 
     setDirection((cycleIndex % 2UL) == 0UL);
-    m_speedStepsPerSecond = profileSpeed(cycleElapsedMilliseconds);
+    m_speedMilliStepsPerSecond =
+        profileMilliStepsPerSecond(cycleElapsedMilliseconds);
     m_stepAccumulator +=
-        static_cast<uint32_t>(m_speedStepsPerSecond) * elapsedMilliseconds;
+        static_cast<uint64_t>(m_speedMilliStepsPerSecond) *
+        elapsedMilliseconds;
 
-    while (m_stepAccumulator >= 1000UL) {
-        m_stepAccumulator -= 1000UL;
+    while (m_stepAccumulator >= 1000000UL) {
+        m_stepAccumulator -= 1000000UL;
         emitStep();
     }
 }
@@ -104,7 +106,12 @@ int32_t StepperMotorController::position() const
 
 uint16_t StepperMotorController::speedStepsPerSecond() const
 {
-    return m_speedStepsPerSecond;
+    return static_cast<uint16_t>(m_speedMilliStepsPerSecond / 1000UL);
+}
+
+uint32_t StepperMotorController::speedMilliStepsPerSecond() const
+{
+    return m_speedMilliStepsPerSecond;
 }
 
 bool StepperMotorController::directionForward() const
@@ -141,17 +148,17 @@ void StepperMotorController::emitStep()
     }
 }
 
-uint16_t StepperMotorController::profileSpeed(
+uint32_t StepperMotorController::profileMilliStepsPerSecond(
     uint32_t cycleElapsedMilliseconds) const
 {
     if (m_accelerationMilliseconds == 0U) {
         if (cycleElapsedMilliseconds == 0UL) {
-            return m_maxStepsPerSecond;
+            return m_maxMilliStepsPerSecond;
         }
     }
     if (cycleElapsedMilliseconds < m_accelerationMilliseconds) {
-        return static_cast<uint16_t>(
-            (static_cast<uint32_t>(m_maxStepsPerSecond) *
+        return static_cast<uint32_t>(
+            (static_cast<uint64_t>(m_maxMilliStepsPerSecond) *
                 cycleElapsedMilliseconds) /
             m_accelerationMilliseconds);
     }
@@ -160,7 +167,7 @@ uint16_t StepperMotorController::profileSpeed(
         static_cast<uint32_t>(m_accelerationMilliseconds) +
         m_cruiseMilliseconds;
     if (cycleElapsedMilliseconds < cruiseEndMilliseconds) {
-        return m_maxStepsPerSecond;
+        return m_maxMilliStepsPerSecond;
     }
 
     const uint32_t decelerationElapsedMilliseconds =
@@ -172,8 +179,8 @@ uint16_t StepperMotorController::profileSpeed(
         return 0;
     }
 
-    return static_cast<uint16_t>(
-        (static_cast<uint32_t>(m_maxStepsPerSecond) *
+    return static_cast<uint32_t>(
+        (static_cast<uint64_t>(m_maxMilliStepsPerSecond) *
             (m_decelerationMilliseconds - decelerationElapsedMilliseconds)) /
         m_decelerationMilliseconds);
 }

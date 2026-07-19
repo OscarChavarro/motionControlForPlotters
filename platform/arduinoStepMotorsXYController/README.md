@@ -13,25 +13,29 @@ Firmware target for an Arduino UNO or Mega2560-based XY step motor controller.
 
 The A4988 driver receives one motor step on each rising edge of `STEP`. The `DIR` signal selects the direction used by the next `STEP` rising edge. The firmware uses `D3` for `STEP` and `D2` for `DIR` by default, leaving `D0` and `D1` free for the USB serial console.
 
-The stepper motor controller is configured with:
+The first stepper motor and its controller are configured with:
 
 ```bash
 -DSTEPPER_MOTOR_STEP_PIN=3
 -DSTEPPER_MOTOR_DIRECTION_PIN=2
 -DSTEPPER_MOTOR_STEP_PULSE_MICROSECONDS=5
 -DSTEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS=5
--DSTEPPER_MOTOR_MAX_STEPS_PER_SECOND=1500
+-DSTEPPER_MOTOR_TRAVEL_ROTATIONS=2
 -DSTEPPER_MOTOR_ACCELERATION_MILLISECONDS=1000
 -DSTEPPER_MOTOR_CRUISE_MILLISECONDS=8000
 -DSTEPPER_MOTOR_DECELERATION_MILLISECONDS=1000
 ```
 
 The example motion profile is a repeating trapezoid. In each direction the
-motor accelerates from 0% to 1500 microsteps per second for 1 second, runs at
-full speed for 8 seconds, decelerates back to 0 for 1 second, and then repeats
-the same profile in the opposite direction. With a 200-step motor and the
-A4988 configured for 1/16 microstepping, one 10-second profile emits about
-13500 microsteps, or 1518.75 degrees: effectively 4.2 complete revolutions.
+motor moves 2 rotations in 10 seconds: 1 second accelerating, 8 seconds at
+constant speed, and 1 second decelerating. The next 10-second segment repeats
+the same trapezoid backward for 2 rotations. With the default 200-step
+`Artillery D42HSA5401-23B` motor and the A4988 configured for 1/16
+microstepping, 2 rotations map to 6400 microsteps and require a calculated
+maximum profile speed of about 0.222 rotations per second.
+The firmware stores the motor model together with its `STEP` and `DIR`
+microcontroller pins, then creates the controller from that model. This keeps
+the initialization and telemetry flow ready for additional motors.
 
 The external power supply detector expects a voltage divider from `VIN` into `A0`. The divider must keep the analog input inside the board's ADC range.
 
@@ -116,8 +120,8 @@ EVENT PSU=LOST VIN=<voltage>V
 The firmware also emits diagnostic telemetry every 500 ms:
 
 ```text
-VIN: <filtered-voltage>V PSU: <OK|OFF> Dir: <F|R>
-Speed: <steps-per-second>
+VIN: <filtered-voltage>V PSU: <OK|OFF> Motor <n> Dir: <F|R>
+Position: [rotation <n>, ]<angle> degrees Speed: <rotations-per-second> rps <degrees-per-second> deg/s
 ```
 
 The current motion-profile diagnostic firmware does not accept serial

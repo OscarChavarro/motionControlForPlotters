@@ -12,6 +12,8 @@ class UartSerial {
     void writeString(const char* value);
     void writeSigned(int32_t value);
     void writeUnsigned(uint32_t value);
+    void writeUnsignedFixed2(uint32_t centiValue);
+    void writeUnsignedFixed3(uint32_t milliValue);
     void writeVoltageMillivolts(uint16_t millivolts);
     void writeLine(const char* value);
 };
