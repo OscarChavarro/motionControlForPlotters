@@ -1,6 +1,7 @@
 # Build outputs
 /build/
 /cmake-build-*/
+/platform/interactiveConsole/build/
 
 # CMake generated files
 CMakeCache.txt
