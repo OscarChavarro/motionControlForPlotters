@@ -130,14 +130,14 @@ Confirmed supply transitions produce a concise event containing the filtered
 voltage measurement:
 
 ```text
-EVENT PSU=READY VIN=<voltage>V
-EVENT PSU=LOST VIN=<voltage>V
+EVENT PSU=READY VMOTOR=<voltage>V
+EVENT PSU=LOST VMOTOR=<voltage>V
 ```
 
 The firmware also emits diagnostic telemetry every 500 ms:
 
 ```text
-VIN: <filtered-voltage>V PSU: <OK|OFF> Motor <n> Dir: <F|R> Position: [rotation <n>, ]<angle> degrees Speed: <rotations-per-second> rps <degrees-per-second> deg/s
+VMOTOR: <filtered-voltage>V PSU: <OK|OFF> Motor <n> Dir: <F|R> Position: [rotation <n>, ]<angle> degrees Speed: <rotations-per-second> rps <degrees-per-second> deg/s
 ```
 
 The current motion-profile diagnostic firmware does not accept serial

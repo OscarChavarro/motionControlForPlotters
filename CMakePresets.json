@@ -16,6 +16,34 @@
       }
     },
     {
+      "name": "avr-uno-debug",
+      "displayName": "AVR Uno Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake-build-avr-uno-debug",
+      "toolchainFile": "${sourceDir}/cmake/avr-gcc-toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MOTION_CONTROL_REPO_ROOT": "${sourceDir}",
+        "ARDUINO_BOARD": "uno",
+        "ARDUINO_MONITOR_BAUD": "1000000",
+        "EXTERNAL_VOLTAGE_PSU": "12",
+        "EXTERNAL_VOLTAGE_PSU_TOLERANCE": "0.4",
+        "EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS": "100000",
+        "EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS": "47000",
+        "PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL": "5000",
+        "STEPPER_MOTOR_STEP_PIN": "3",
+        "STEPPER_MOTOR_DIRECTION_PIN": "2",
+        "STEPPER_MOTOR_STEP_PULSE_MICROSECONDS": "5",
+        "STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS": "5",
+        "STEPPER_MOTOR_ACCELERATION_MILLISECONDS": "1000",
+        "STEPPER_MOTOR_CRUISE_MILLISECONDS": "8000",
+        "STEPPER_MOTOR_DECELERATION_MILLISECONDS": "1000",
+        "CMAKE_OSX_ARCHITECTURES": "",
+        "CMAKE_OSX_SYSROOT": "",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": ""
+      }
+    },
+    {
       "name": "avr-mega2560-debug",
       "displayName": "AVR Mega2560 Debug",
       "generator": "Ninja",
@@ -48,6 +76,13 @@
     {
       "name": "host-debug",
       "configurePreset": "host-debug"
+    },
+    {
+      "name": "avr-uno-debug",
+      "configurePreset": "avr-uno-debug",
+      "targets": [
+        "arduino_hex"
+      ]
     },
     {
       "name": "avr-mega2560-debug",

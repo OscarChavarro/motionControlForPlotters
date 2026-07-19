@@ -3,8 +3,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
-build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-mega2560-debug}"
+preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-uno-debug}"
+build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-uno-debug}"
+baud="${ARDUINO_MONITOR_BAUD:-1000000}"
 
 select_serial_port() {
   local ports=()
@@ -69,7 +70,9 @@ port="$(select_serial_port)"
 
 cd "${repo_root}"
 
-cmake --preset "${preset}" -DARDUINO_PORT="${port}"
+cmake --preset "${preset}" \
+  -DARDUINO_PORT="${port}" \
+  -DARDUINO_MONITOR_BAUD="${baud}"
 cmake --build --preset "${preset}"
 cmake --build "${build_dir}" --target arduino_upload
 

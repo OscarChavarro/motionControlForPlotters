@@ -3,8 +3,8 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
-build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-mega2560-debug}"
+preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-uno-debug}"
+build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-uno-debug}"
 baud="${ARDUINO_MONITOR_BAUD:-1000000}"
 
 read_cache_value() {
@@ -79,7 +79,9 @@ port="$(select_serial_port)"
 
 cd "${repo_root}"
 
-cmake --preset "${preset}" -DARDUINO_PORT="${port}" >/dev/null
+cmake --preset "${preset}" \
+  -DARDUINO_PORT="${port}" \
+  -DARDUINO_MONITOR_BAUD="${baud}" >/dev/null
 cached_baud="$(read_cache_value "ARDUINO_MONITOR_BAUD")"
 if [ -n "${cached_baud}" ]; then
   baud="${cached_baud}"

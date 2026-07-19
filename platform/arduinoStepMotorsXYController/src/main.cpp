@@ -256,7 +256,7 @@ main()
             serial.writeString("EVENT PSU=");
             serial.writeString(
                 externalPowerSupplyAvailable ? "READY" : "LOST");
-            serial.writeString(" VIN=");
+            serial.writeString(" VMOTOR=");
             serial.writeVoltageMillivolts(
                 externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
             serial.writeLine("");
@@ -272,7 +272,7 @@ main()
 
         if ((now - lastTelemetryPrint) >= 500UL) {
             lastTelemetryPrint = now;
-            serial.writeString("VIN: ");
+            serial.writeString("VMOTOR: ");
             serial.writeVoltageMillivolts(
                 externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
             serial.writeString(" PSU: ");
