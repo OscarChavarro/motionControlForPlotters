@@ -2,7 +2,8 @@
 
 #include <avr/io.h>
 
-void UartSerial::initialize(uint32_t baudRate)
+void
+UartSerial::initialize(uint32_t baudRate)
 {
     const uint32_t ubrrValue = (F_CPU / (8UL * baudRate)) - 1UL;
 
@@ -13,24 +14,28 @@ void UartSerial::initialize(uint32_t baudRate)
     UCSR0C = static_cast<uint8_t>((1U << UCSZ01) | (1U << UCSZ00));
 }
 
-bool UartSerial::isReadAvailable()
+bool
+UartSerial::isReadAvailable()
 {
     return (UCSR0A & static_cast<uint8_t>(1U << RXC0)) != 0U;
 }
 
-char UartSerial::readChar()
+char
+UartSerial::readChar()
 {
     return static_cast<char>(UDR0);
 }
 
-void UartSerial::writeChar(char value)
+void
+UartSerial::writeChar(char value)
 {
     while ((UCSR0A & static_cast<uint8_t>(1U << UDRE0)) == 0U) {
     }
     UDR0 = static_cast<uint8_t>(value);
 }
 
-void UartSerial::writeString(const char* value)
+void
+UartSerial::writeString(const char* value)
 {
     if (!value) {
         return;
@@ -41,7 +46,8 @@ void UartSerial::writeString(const char* value)
     }
 }
 
-void UartSerial::writeSigned(int32_t value)
+void
+UartSerial::writeSigned(int32_t value)
 {
     if (value < 0L) {
         writeChar('-');
@@ -51,7 +57,8 @@ void UartSerial::writeSigned(int32_t value)
     writeUnsigned(static_cast<uint32_t>(value));
 }
 
-void UartSerial::writeUnsigned(uint32_t value)
+void
+UartSerial::writeUnsigned(uint32_t value)
 {
     char buffer[11];
     uint8_t index = 0;
@@ -71,7 +78,8 @@ void UartSerial::writeUnsigned(uint32_t value)
     }
 }
 
-void UartSerial::writeVoltageMillivolts(uint16_t millivolts)
+void
+UartSerial::writeVoltageMillivolts(uint16_t millivolts)
 {
     const uint16_t volts = static_cast<uint16_t>(millivolts / 1000U);
     const uint16_t fractional = static_cast<uint16_t>(millivolts % 1000U);
@@ -84,7 +92,8 @@ void UartSerial::writeVoltageMillivolts(uint16_t millivolts)
     writeChar('V');
 }
 
-void UartSerial::writeLine(const char* value)
+void
+UartSerial::writeLine(const char* value)
 {
     writeString(value);
     writeString("\r\n");

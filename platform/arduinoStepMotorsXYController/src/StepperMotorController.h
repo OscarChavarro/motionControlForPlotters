@@ -4,26 +4,7 @@
 #include <stdint.h>
 
 class StepperMotorController {
-public:
-    StepperMotorController(
-        uint8_t stepPin,
-        uint8_t directionPin,
-        uint16_t stepPulseMicroseconds,
-        uint16_t directionSetupMicroseconds);
-
-    void initialize();
-    void configureRepeatingTrapezoid(
-        uint16_t maxStepsPerSecond,
-        uint16_t accelerationMilliseconds,
-        uint16_t cruiseMilliseconds,
-        uint16_t decelerationMilliseconds);
-    void update(uint32_t nowMilliseconds, bool enabled);
-
-    int32_t position() const;
-    uint16_t speedStepsPerSecond() const;
-    bool directionForward() const;
-
-private:
+  private:
     void setDirection(bool forward);
     void pulseStep();
     void emitStep();
@@ -49,6 +30,25 @@ private:
     uint16_t m_speedStepsPerSecond;
     bool m_directionForward;
     bool m_initialized;
+
+  public:
+    StepperMotorController(
+        uint8_t stepPin,
+        uint8_t directionPin,
+        uint16_t stepPulseMicroseconds,
+        uint16_t directionSetupMicroseconds);
+
+    void initialize();
+    void configureRepeatingTrapezoid(
+        uint16_t maxStepsPerSecond,
+        uint16_t accelerationMilliseconds,
+        uint16_t cruiseMilliseconds,
+        uint16_t decelerationMilliseconds);
+    void update(uint32_t nowMilliseconds, bool enabled);
+
+    int32_t position() const;
+    uint16_t speedStepsPerSecond() const;
+    bool directionForward() const;
 };
 
 #endif

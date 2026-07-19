@@ -4,18 +4,7 @@
 #include <stdint.h>
 
 class ExternalPowerSupplyDetector {
-public:
-    void initialize();
-    bool update(uint32_t nowMilliseconds);
-
-    bool isExternalPowerSupplyAvailable();
-    bool isExternalPowerSupplyAvailable(uint16_t externalSupplyMillivolts);
-    uint16_t readAnalogInputMillivolts();
-    uint16_t readExternalSupplyMillivolts();
-
-    uint16_t filteredExternalSupplyMillivolts() const;
-
-private:
+  private:
     static uint16_t readAdc0();
     static uint16_t minimumExternalSupplyMillivolts();
     static uint16_t disconnectExternalSupplyMillivolts();
@@ -27,6 +16,17 @@ private:
     uint8_t m_consecutiveBadSamples;
     bool m_externalPowerSupplyAvailable;
     bool m_hasSample;
+
+  public:
+    void initialize();
+    bool update(uint32_t nowMilliseconds);
+
+    bool isExternalPowerSupplyAvailable();
+    bool isExternalPowerSupplyAvailable(uint16_t externalSupplyMillivolts);
+    uint16_t readAnalogInputMillivolts();
+    uint16_t readExternalSupplyMillivolts();
+
+    uint16_t filteredExternalSupplyMillivolts() const;
 };
 
 #endif

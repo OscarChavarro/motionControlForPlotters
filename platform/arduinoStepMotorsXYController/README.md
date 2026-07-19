@@ -20,18 +20,18 @@ The stepper motor controller is configured with:
 -DSTEPPER_MOTOR_DIRECTION_PIN=2
 -DSTEPPER_MOTOR_STEP_PULSE_MICROSECONDS=5
 -DSTEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS=5
--DSTEPPER_MOTOR_MAX_STEPS_PER_SECOND=711
+-DSTEPPER_MOTOR_MAX_STEPS_PER_SECOND=1500
 -DSTEPPER_MOTOR_ACCELERATION_MILLISECONDS=1000
 -DSTEPPER_MOTOR_CRUISE_MILLISECONDS=8000
 -DSTEPPER_MOTOR_DECELERATION_MILLISECONDS=1000
 ```
 
 The example motion profile is a repeating trapezoid. In each direction the
-motor accelerates from 0% to 711 microsteps per second for 1 second, runs at
+motor accelerates from 0% to 1500 microsteps per second for 1 second, runs at
 full speed for 8 seconds, decelerates back to 0 for 1 second, and then repeats
 the same profile in the opposite direction. With a 200-step motor and the
 A4988 configured for 1/16 microstepping, one 10-second profile emits about
-6398 microsteps, or 719.8 degrees: effectively two complete revolutions.
+13500 microsteps, or 1518.75 degrees: effectively 4.2 complete revolutions.
 
 The external power supply detector expects a voltage divider from `VIN` into `A0`. The divider must keep the analog input inside the board's ADC range.
 

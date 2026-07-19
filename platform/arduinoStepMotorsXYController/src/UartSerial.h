@@ -1,10 +1,10 @@
-#ifndef XY_MOTION_CONTROLLER_UARTSERIAL_H
-#define XY_MOTION_CONTROLLER_UARTSERIAL_H
+#ifndef __UART_SERIAL__
+#define __UART_SERIAL__
 
 #include <stdint.h>
 
 class UartSerial {
-public:
+  public:
     void initialize(uint32_t baudRate);
     bool isReadAvailable();
     char readChar();

@@ -11,7 +11,8 @@ ISR(TIMER0_COMPA_vect)
     SystemClock::onTimerCompareMatch();
 }
 
-void SystemClock::initialize()
+void
+SystemClock::initialize()
 {
     cli();
 
@@ -23,7 +24,8 @@ void SystemClock::initialize()
     sei();
 }
 
-uint32_t SystemClock::millis()
+uint32_t
+SystemClock::millis()
 {
     uint32_t value = 0;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
@@ -32,12 +34,14 @@ uint32_t SystemClock::millis()
     return value;
 }
 
-void SystemClock::onTimerCompareMatch()
+void
+SystemClock::onTimerCompareMatch()
 {
     ++g_systemMillis;
 }
 
-uint8_t SystemClock::timerCompareValue()
+uint8_t
+SystemClock::timerCompareValue()
 {
     const uint32_t timerPrescaler = 64UL;
     const uint32_t timerFrequencyHz = 1000UL;

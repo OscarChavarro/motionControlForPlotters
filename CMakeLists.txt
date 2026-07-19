@@ -48,7 +48,7 @@ set(STEPPER_MOTOR_STEP_PULSE_MICROSECONDS "5" CACHE STRING
   "A4988 STEP high and low pulse width in microseconds")
 set(STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS "5" CACHE STRING
   "Delay between changing DIR and emitting the STEP rising edge")
-set(STEPPER_MOTOR_MAX_STEPS_PER_SECOND "711" CACHE STRING
+set(STEPPER_MOTOR_MAX_STEPS_PER_SECOND "1500" CACHE STRING
   "Maximum speed for the example trapezoid profile, in STEP pulses per second")
 set(STEPPER_MOTOR_ACCELERATION_MILLISECONDS "1000" CACHE STRING
   "Acceleration time for the example trapezoid profile")

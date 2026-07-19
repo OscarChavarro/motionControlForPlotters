@@ -1,4 +1,3 @@
-#include "BuildInfo.h"
 #include "ExternalPowerSupplyDetector.h"
 #include "StepperMotorController.h"
 #include "SystemClock.h"

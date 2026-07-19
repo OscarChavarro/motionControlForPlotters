@@ -34,7 +34,7 @@ set(STEPPER_MOTOR_STEP_PULSE_MICROSECONDS "5" CACHE STRING
   "A4988 STEP high and low pulse width in microseconds")
 set(STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS "5" CACHE STRING
   "Delay between changing DIR and emitting the STEP rising edge")
-set(STEPPER_MOTOR_MAX_STEPS_PER_SECOND "711" CACHE STRING
+set(STEPPER_MOTOR_MAX_STEPS_PER_SECOND "1500" CACHE STRING
   "Maximum speed for the example trapezoid profile, in STEP pulses per second")
 set(STEPPER_MOTOR_ACCELERATION_MILLISECONDS "1000" CACHE STRING
   "Acceleration time for the example trapezoid profile")
@@ -113,11 +113,6 @@ string(REGEX REPLACE " +" " " MOTION_CONTROL_BUILD_TIMESTAMP
 string(TOLOWER "${MOTION_CONTROL_BUILD_TIMESTAMP}"
   MOTION_CONTROL_BUILD_TIMESTAMP)
 
-configure_file(
-  ${CMAKE_CURRENT_LIST_DIR}/src/BuildInfo.h.in
-  ${CMAKE_CURRENT_BINARY_DIR}/generated/BuildInfo.h
-  @ONLY)
-
 set(PLATFORM_ARDUINO_SOURCES
   src/main.cpp
   src/ExternalPowerSupplyDetector.cpp
@@ -134,8 +129,7 @@ add_executable(arduinoStepMotorsXYController
 target_include_directories(arduinoStepMotorsXYController
   PRIVATE
     ${MOTION_CONTROL_REPO_ROOT}/motionControlCore/src/main/cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src
-    ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    ${CMAKE_CURRENT_LIST_DIR}/src)
 
 target_compile_features(arduinoStepMotorsXYController PRIVATE cxx_std_17)
 
@@ -156,6 +150,7 @@ target_compile_definitions(arduinoStepMotorsXYController
     STEPPER_MOTOR_ACCELERATION_MILLISECONDS=${STEPPER_MOTOR_ACCELERATION_MILLISECONDS}
     STEPPER_MOTOR_CRUISE_MILLISECONDS=${STEPPER_MOTOR_CRUISE_MILLISECONDS}
     STEPPER_MOTOR_DECELERATION_MILLISECONDS=${STEPPER_MOTOR_DECELERATION_MILLISECONDS}
+    MOTION_CONTROL_BUILD_TIMESTAMP="${MOTION_CONTROL_BUILD_TIMESTAMP}"
     ${_BOARD_DEFINE})
 
 target_compile_options(arduinoStepMotorsXYController
