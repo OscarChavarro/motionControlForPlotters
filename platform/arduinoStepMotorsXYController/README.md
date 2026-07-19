@@ -13,6 +13,13 @@ Firmware target for an Arduino UNO or Mega2560-based XY step motor controller.
 
 The A4988 driver receives one motor step on each rising edge of `STEP`. The `DIR` signal selects the direction used by the next `STEP` rising edge. The firmware uses `D3` for `STEP` and `D2` for `DIR` by default, leaving `D0` and `D1` free for the USB serial console.
 
+`AvrStepDirectionDriver` supports D2-D13 on UNO/Nano and D2-D53 on Mega
+2560. The program rejects D0/D1 because this firmware reserves them for UART,
+and it rejects repeated pins across registered motors. Consequently, the Mega
+has a theoretical maximum of 26 two-pin motor drivers. The current
+cooperative, blocking pulse implementation does not yet guarantee that 26
+motors can be driven simultaneously at useful rates.
+
 The first stepper motor and its controller are configured with:
 
 ```bash
@@ -33,9 +40,19 @@ the same trapezoid backward for 2 rotations. With the default 200-step
 `Artillery D42HSA5401-23B` motor and the A4988 configured for 1/16
 microstepping, 2 rotations map to 6400 microsteps and require a calculated
 maximum profile speed of about 0.222 rotations per second.
-The firmware stores the motor model together with its `STEP` and `DIR`
-microcontroller pins, then creates the controller from that model. This keeps
-the initialization and telemetry flow ready for additional motors.
+The firmware stores motor definitions in the `STEPPER_MOTOR_PROGRAMS` table in
+`src/main.cpp`. Adding one table entry automatically adds its platform driver,
+portable controller, initialization, validation, update, and telemetry state.
+Each table entry may have independent model, pins, pulse timings, travel, and
+trapezoid timings.
+
+The reusable `StepperMotorController` and the `SystemClock`, `UartSerial`,
+`GpioLed`, `ExternalPowerSupplyDetector`, and `StepperMotorDriver` interfaces
+live in `motionControlCore`. Their concrete implementations in this target are
+named `AvrSystemClock`, `AvrUartSerial`, `AvrGpioLed`,
+`AvrExternalPowerSupplyDetector`, and `AvrStepDirectionDriver`. `main.cpp`
+creates these concrete objects during initialization and uses the core
+interface types afterward.
 
 The external power supply detector expects a voltage divider from `VIN` into `A0`. The divider must keep the analog input inside the board's ADC range.
 
@@ -92,7 +109,7 @@ The missing-PSU error print interval is configured in milliseconds with:
 -DPSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL=5000
 ```
 
-At runtime, `ExternalPowerSupplyDetector` samples `A0` every 10 ms,
+At runtime, `AvrExternalPowerSupplyDetector` samples `A0` every 10 ms,
 converts the ADC reading to millivolts, and reconstructs the external `VIN`
 voltage using the configured resistor divider. An IIR filter with a coefficient
 of `1/8` prevents isolated ADC spikes from restarting motion.
@@ -120,8 +137,7 @@ EVENT PSU=LOST VIN=<voltage>V
 The firmware also emits diagnostic telemetry every 500 ms:
 
 ```text
-VIN: <filtered-voltage>V PSU: <OK|OFF> Motor <n> Dir: <F|R>
-Position: [rotation <n>, ]<angle> degrees Speed: <rotations-per-second> rps <degrees-per-second> deg/s
+VIN: <filtered-voltage>V PSU: <OK|OFF> Motor <n> Dir: <F|R> Position: [rotation <n>, ]<angle> degrees Speed: <rotations-per-second> rps <degrees-per-second> deg/s
 ```
 
 The current motion-profile diagnostic firmware does not accept serial

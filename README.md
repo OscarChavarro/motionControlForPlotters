@@ -7,11 +7,21 @@ The current codebase is split into two main areas:
 - `motionControlCore`: reusable platform-independent motion logic.
 - `platform`: hardware-specific firmware entry points and device wrappers.
 
-At this stage, the core contains a 2D rasterization module and the platform layer contains an Arduino AVR firmware target. The Arduino firmware initializes a millisecond system clock, a UART serial interface, and the board LED, then runs a simple non-blocking blink loop that reports LED state over serial.
+At this stage, the core contains 2D rasterization, stepper-motor modeling, and a portable per-motor controller. The Arduino AVR target supplies the hardware clock, UART, power-supply sensing, and `STEP`/`DIR` pulse generation. Its current repeating movement is a diagnostic program that will evolve into the generic controller.
 
 ## Core
 
-`motionControlCore` currently provides `Rasterizer2D`, a callback-based rasterization utility intended for plotter-oriented motion code.
+`motionControlCore` currently provides:
+
+- `Rasterizer2D`, a callback-based rasterization utility intended for plotter-oriented motion code.
+- `StepperMotor`, the physical motor model and unit conversions between microsteps, rotations, and degrees.
+- `StepperMotorController`, independent position, direction, speed, and trapezoidal-profile state for one motor.
+- `StepperMotorDriver`, the platform boundary used by the controller to select direction and emit a step.
+- `SystemClock`, `UartSerial`, `GpioLed`, and `ExternalPowerSupplyDetector`, portable HAL interfaces implemented by each target platform.
+
+`UartSerial` also contains the reusable integer, fixed-point, voltage, and line
+formatting used by telemetry. Platform implementations only provide UART
+initialization and character input/output.
 
 It supports:
 
@@ -27,10 +37,23 @@ The implemented platform target is `platform/arduinoStepMotorsXYController`, whi
 
 It provides:
 
-- `SystemClock`: configures AVR Timer0 compare interrupts to maintain a millisecond counter.
-- `UartSerial`: configures UART0 and writes serial text output.
-- `GpioLed`: controls the built-in board LED using AVR GPIO registers.
-- `main.cpp`: initializes the platform services, prints boot messages, toggles the LED every second, and writes `LED=ON` / `LED=OFF` status messages over serial.
+- `AvrSystemClock`: implements `SystemClock` using AVR Timer0 compare interrupts.
+- `AvrUartSerial`: implements the primitive `UartSerial` operations using UART0.
+- `AvrGpioLed`: implements `GpioLed` using the built-in board LED registers.
+- `AvrExternalPowerSupplyDetector`: implements external motor-supply sensing through AVR ADC0.
+- `AvrStepDirectionDriver`: maps Arduino digital pins to AVR registers and generates `STEP`/`DIR` signals.
+- `main.cpp`: constructs AVR implementations, exposes them to the program through HAL references, declares the motor registry, and runs the current diagnostic motion program.
+
+Adding a motor requires adding one entry to `STEPPER_MOTOR_PROGRAMS` in
+`main.cpp`. The number of motors and all runtime arrays are derived from that
+single registry. Every entry can use a different model, pin pair, electrical
+timing, travel distance, and acceleration/cruise/deceleration times.
+
+On the Mega 2560, the AVR driver supports digital pins D2-D53. With D0/D1
+reserved for USB UART, this gives a theoretical wiring limit of 26 two-pin
+motor drivers. Actual simultaneous motor count and speed remain constrained by
+the current cooperative pulse generator and the 16 MHz CPU; timer-driven pulse
+scheduling is a later phase.
 
 Supported board presets are:
 
@@ -117,5 +140,8 @@ The top-level CMake project exposes these Arduino-related options:
 - `ARDUINO_UPLOAD_BAUD`: optional upload baud override.
 - `ARDUINO_MONITOR_BAUD`: optional serial monitor baud override.
 - `ARDUINO_PROGRAMMER`: optional `avrdude` programmer override.
+- `STEPPER_MOTOR_STEP_PIN`: first diagnostic motor `STEP` pin.
+- `STEPPER_MOTOR_DIRECTION_PIN`: first diagnostic motor `DIR` pin.
+- `STEPPER_MOTOR_TRAVEL_ROTATIONS`: rotations in each forward/backward segment.
 
 The Arduino subproject also accepts lower-level overrides such as `ARDUINO_MCU` and `ARDUINO_F_CPU` when a preset is not enough.

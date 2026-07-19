@@ -23,6 +23,46 @@ Primary goals:
 
 The same motion core should execute on every platform, with only the HAL changing.
 
+## Current Implementation Phase
+
+The repository is currently building the infrastructure incrementally. The
+Arduino program is diagnostic firmware, not the final motion-control protocol
+or planner. Its repeating forward/backward movement exists to exercise motor
+modeling, physical pin assignment, motion profiles, power gating, and
+telemetry while those pieces are separated into reusable layers.
+
+The current boundary is:
+
+```text
+main.cpp motor registry and diagnostic program
+    -> portable HAL interfaces
+        -> SystemClock, UartSerial, GpioLed,
+           ExternalPowerSupplyDetector, StepperMotorDriver
+    -> portable motion logic
+        -> StepperMotorController (per-motor state and motion profile)
+    -> AVR implementations created during platform initialization
+        -> AvrSystemClock, AvrUartSerial, AvrGpioLed,
+           AvrExternalPowerSupplyDetector, AvrStepDirectionDriver
+```
+
+The diagnostic program constructs each concrete `Avr*` object once and then
+uses references to the corresponding core interface. This keeps application
+logic independent from AVR headers and allows another platform to compose the
+same logic with its own implementations.
+
+`StepperMotor` describes one physical motor installation: motor reference,
+motor type, full steps per rotation, configured microstepping, and its `STEP`
+and `DIR` pin assignment. Each registered motor owns an independent driver and
+controller state, including position, direction, speed, profile clock, and
+fractional-step accumulator.
+
+On an Arduino Mega 2560, reserving D0 and D1 for UART leaves D2-D53 available
+for up to 26 two-pin `STEP`/`DIR` motor drivers. The AVR platform driver maps
+that complete digital-pin range. This is a pin-count limit only: the present
+cooperative loop emits pulses with short blocking waits. A timer/interrupt
+step scheduler is still required before simultaneous high-rate operation can
+be guaranteed for many motors.
+
 ## Development Environment
 
 - VS Code
@@ -144,11 +184,13 @@ The firmware should use:
 - State machines
 - Pulse scheduling
 
-No blocking delays.
+The final scheduler must not use blocking delays. The current diagnostic AVR
+driver still uses short blocking waits while emitting each pulse; replacing it
+with timer/interrupt scheduling is part of the planned platform work.
 
 Future extensions:
 
-- Trapezoidal profiles
+- Command-driven trapezoidal profiles (a repeating diagnostic profile exists)
 - S-curve acceleration
 - Look-ahead planner
 

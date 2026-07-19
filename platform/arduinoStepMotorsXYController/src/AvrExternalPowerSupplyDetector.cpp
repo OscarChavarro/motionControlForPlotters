@@ -1,8 +1,20 @@
-#include "ExternalPowerSupplyDetector.h"
+#include "AvrExternalPowerSupplyDetector.h"
 
 #include <avr/io.h>
 
-void ExternalPowerSupplyDetector::initialize()
+AvrExternalPowerSupplyDetector::AvrExternalPowerSupplyDetector()
+    : m_lastSampleMilliseconds(0),
+      m_rawExternalSupplyMillivolts(0),
+      m_filteredExternalSupplyMillivolts(0),
+      m_consecutiveGoodSamples(0),
+      m_consecutiveBadSamples(0),
+      m_externalPowerSupplyAvailable(false),
+      m_hasSample(false)
+{
+}
+
+void
+AvrExternalPowerSupplyDetector::initialize()
 {
     ADMUX = static_cast<uint8_t>(1U << REFS0);
     ADCSRA = static_cast<uint8_t>(
@@ -20,7 +32,8 @@ void ExternalPowerSupplyDetector::initialize()
     m_hasSample = false;
 }
 
-bool ExternalPowerSupplyDetector::update(uint32_t nowMilliseconds)
+bool
+AvrExternalPowerSupplyDetector::update(uint32_t nowMilliseconds)
 {
     const uint32_t sampleIntervalMilliseconds = 10UL;
     const uint8_t stableSampleCount = 10U;
@@ -81,25 +94,29 @@ bool ExternalPowerSupplyDetector::update(uint32_t nowMilliseconds)
     return true;
 }
 
-bool ExternalPowerSupplyDetector::isExternalPowerSupplyAvailable()
+bool
+AvrExternalPowerSupplyDetector::isExternalPowerSupplyAvailable() const
 {
     return m_externalPowerSupplyAvailable;
 }
 
-bool ExternalPowerSupplyDetector::isExternalPowerSupplyAvailable(
-    uint16_t externalSupplyMillivolts)
+bool
+AvrExternalPowerSupplyDetector::isExternalPowerSupplyAvailable(
+    uint16_t externalSupplyMillivolts) const
 {
     return externalSupplyMillivolts >= minimumExternalSupplyMillivolts();
 }
 
-uint16_t ExternalPowerSupplyDetector::readAnalogInputMillivolts()
+uint16_t
+AvrExternalPowerSupplyDetector::readAnalogInputMillivolts()
 {
     const uint32_t adcReferenceMillivolts = 5000UL;
     return static_cast<uint16_t>(
         (static_cast<uint32_t>(readAdc0()) * adcReferenceMillivolts) / 1023UL);
 }
 
-uint16_t ExternalPowerSupplyDetector::readExternalSupplyMillivolts()
+uint16_t
+AvrExternalPowerSupplyDetector::readExternalSupplyMillivolts()
 {
     const uint32_t analogInputMillivolts = readAnalogInputMillivolts();
     const uint32_t vinResistorOhms =
@@ -120,12 +137,14 @@ uint16_t ExternalPowerSupplyDetector::readExternalSupplyMillivolts()
     return static_cast<uint16_t>(externalSupplyMillivolts);
 }
 
-uint16_t ExternalPowerSupplyDetector::filteredExternalSupplyMillivolts() const
+uint16_t
+AvrExternalPowerSupplyDetector::filteredExternalSupplyMillivolts() const
 {
     return m_filteredExternalSupplyMillivolts;
 }
 
-uint16_t ExternalPowerSupplyDetector::readAdc0()
+uint16_t
+AvrExternalPowerSupplyDetector::readAdc0()
 {
     ADMUX = static_cast<uint8_t>((ADMUX & 0xF0U) | 0U);
     ADCSRA = static_cast<uint8_t>(ADCSRA | (1U << ADSC));
@@ -134,7 +153,8 @@ uint16_t ExternalPowerSupplyDetector::readAdc0()
     return ADC;
 }
 
-uint16_t ExternalPowerSupplyDetector::minimumExternalSupplyMillivolts()
+uint16_t
+AvrExternalPowerSupplyDetector::minimumExternalSupplyMillivolts()
 {
     const int32_t minimumMillivolts =
         static_cast<int32_t>(
@@ -148,7 +168,8 @@ uint16_t ExternalPowerSupplyDetector::minimumExternalSupplyMillivolts()
     return static_cast<uint16_t>(minimumMillivolts);
 }
 
-uint16_t ExternalPowerSupplyDetector::disconnectExternalSupplyMillivolts()
+uint16_t
+AvrExternalPowerSupplyDetector::disconnectExternalSupplyMillivolts()
 {
     const uint16_t hysteresisMillivolts = 400U;
     const uint16_t minimumMillivolts = minimumExternalSupplyMillivolts();

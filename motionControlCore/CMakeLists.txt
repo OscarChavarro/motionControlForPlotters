@@ -11,3 +11,21 @@ target_include_directories(motionControlCore
     ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp)
 
 target_compile_features(motionControlCore PUBLIC cxx_std_17)
+
+if(BUILD_TESTING AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "avr")
+  add_executable(motionControlCoreUartSerialTest
+    src/test/cpp/hal/UartSerialTest.cpp)
+  target_link_libraries(motionControlCoreUartSerialTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.UartSerial
+    COMMAND motionControlCoreUartSerialTest)
+
+  add_executable(motionControlCoreStepperMotorControllerTest
+    src/test/cpp/motion/stepperMotor/StepperMotorControllerTest.cpp)
+  target_link_libraries(motionControlCoreStepperMotorControllerTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.StepperMotorController
+    COMMAND motionControlCoreStepperMotorControllerTest)
+endif()

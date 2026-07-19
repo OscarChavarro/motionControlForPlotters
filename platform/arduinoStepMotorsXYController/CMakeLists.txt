@@ -49,7 +49,7 @@ if(STEPPER_MOTOR_STEP_PIN STREQUAL "0" OR
     STEPPER_MOTOR_DIRECTION_PIN STREQUAL "1")
   message(FATAL_ERROR
     "Stepper motor pins 0 and 1 are not supported while UART serial logging is enabled. "
-    "Use D2 for STEP and D3 for DIR.")
+    "Use two distinct digital pins starting at D2.")
 endif()
 
 string(TOLOWER "${ARDUINO_BOARD}" ARDUINO_BOARD_NORMALIZED)
@@ -114,12 +114,12 @@ string(TOLOWER "${MOTION_CONTROL_BUILD_TIMESTAMP}"
   MOTION_CONTROL_BUILD_TIMESTAMP)
 
 set(PLATFORM_ARDUINO_SOURCES
+  src/AvrExternalPowerSupplyDetector.cpp
+  src/AvrGpioLed.cpp
+  src/AvrStepDirectionDriver.cpp
+  src/AvrSystemClock.cpp
+  src/AvrUartSerial.cpp
   src/main.cpp
-  src/ExternalPowerSupplyDetector.cpp
-  src/GpioLed.cpp
-  src/StepperMotorController.cpp
-  src/SystemClock.cpp
-  src/UartSerial.cpp
 )
 
 add_executable(arduinoStepMotorsXYController

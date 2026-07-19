@@ -1,18 +1,18 @@
-#include "SystemClock.h"
+#include "AvrSystemClock.h"
 
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <util/atomic.h>
 
-volatile uint32_t SystemClock::g_systemMillis = 0;
+volatile uint32_t AvrSystemClock::g_systemMillis = 0;
 
 ISR(TIMER0_COMPA_vect)
 {
-    SystemClock::onTimerCompareMatch();
+    AvrSystemClock::onTimerCompareMatch();
 }
 
 void
-SystemClock::initialize()
+AvrSystemClock::initialize()
 {
     cli();
 
@@ -25,7 +25,7 @@ SystemClock::initialize()
 }
 
 uint32_t
-SystemClock::millis()
+AvrSystemClock::millis() const
 {
     uint32_t value = 0;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
@@ -35,15 +35,16 @@ SystemClock::millis()
 }
 
 void
-SystemClock::onTimerCompareMatch()
+AvrSystemClock::onTimerCompareMatch()
 {
     ++g_systemMillis;
 }
 
 uint8_t
-SystemClock::timerCompareValue()
+AvrSystemClock::timerCompareValue()
 {
     const uint32_t timerPrescaler = 64UL;
     const uint32_t timerFrequencyHz = 1000UL;
-    return static_cast<uint8_t>((F_CPU / timerPrescaler / timerFrequencyHz) - 1UL);
+    return static_cast<uint8_t>(
+        (F_CPU / timerPrescaler / timerFrequencyHz) - 1UL);
 }

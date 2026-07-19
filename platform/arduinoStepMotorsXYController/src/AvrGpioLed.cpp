@@ -1,16 +1,16 @@
-#include "GpioLed.h"
+#include "AvrGpioLed.h"
 
 #include <avr/io.h>
 
 void
-GpioLed::initialize()
+AvrGpioLed::initialize()
 {
     *ledDdr() |= ledBitMask();
     write(false);
 }
 
 void
-GpioLed::write(bool enabled)
+AvrGpioLed::write(bool enabled)
 {
     if (enabled) {
         *ledPort() |= ledBitMask();
@@ -21,19 +21,19 @@ GpioLed::write(bool enabled)
 }
 
 volatile unsigned char*
-GpioLed::ledPort()
+AvrGpioLed::ledPort()
 {
     return &PORTB;
 }
 
 volatile unsigned char*
-GpioLed::ledDdr()
+AvrGpioLed::ledDdr()
 {
     return &DDRB;
 }
 
 unsigned char
-GpioLed::ledBitMask()
+AvrGpioLed::ledBitMask()
 {
   #if defined(ARDUINO_AVR_MEGA2560)
     return static_cast<unsigned char>(1U << 7);

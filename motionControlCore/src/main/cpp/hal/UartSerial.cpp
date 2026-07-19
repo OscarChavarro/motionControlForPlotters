@@ -1,43 +1,9 @@
-#include "UartSerial.h"
-
-#include <avr/io.h>
-
-void
-UartSerial::initialize(uint32_t baudRate)
-{
-    const uint32_t ubrrValue = (F_CPU / (8UL * baudRate)) - 1UL;
-
-    UBRR0H = static_cast<uint8_t>(ubrrValue >> 8U);
-    UBRR0L = static_cast<uint8_t>(ubrrValue & 0xFFU);
-    UCSR0A = static_cast<uint8_t>(1U << U2X0);
-    UCSR0B = static_cast<uint8_t>((1U << TXEN0) | (1U << RXEN0));
-    UCSR0C = static_cast<uint8_t>((1U << UCSZ01) | (1U << UCSZ00));
-}
-
-bool
-UartSerial::isReadAvailable()
-{
-    return (UCSR0A & static_cast<uint8_t>(1U << RXC0)) != 0U;
-}
-
-char
-UartSerial::readChar()
-{
-    return static_cast<char>(UDR0);
-}
-
-void
-UartSerial::writeChar(char value)
-{
-    while ((UCSR0A & static_cast<uint8_t>(1U << UDRE0)) == 0U) {
-    }
-    UDR0 = static_cast<uint8_t>(value);
-}
+#include "hal/UartSerial.h"
 
 void
 UartSerial::writeString(const char* value)
 {
-    if (!value) {
+    if (value == nullptr) {
         return;
     }
     while (*value != '\0') {
