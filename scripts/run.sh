@@ -3,9 +3,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-uno-debug}"
-build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-uno-debug}"
-baud="${ARDUINO_MONITOR_BAUD:-1000000}"
+preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
+build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-mega2560-debug}"
+baud="${ARDUINO_MONITOR_BAUD:-500000}"
 
 read_cache_value() {
   local key="$1"

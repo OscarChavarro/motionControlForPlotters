@@ -3,12 +3,13 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
+preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
 build_dir="${MOTION_CONTROL_INTERACTIVE_BUILD_DIR:-${repo_root}/platform/interactiveConsole/build}"
-baud="${ARDUINO_MONITOR_BAUD:-1000000}"
+baud="${ARDUINO_MONITOR_BAUD:-500000}"
 
 read_cache_value() {
   local key="$1"
-  local cache_file="${repo_root}/cmake-build-avr-uno-debug/CMakeCache.txt"
+  local cache_file="${repo_root}/cmake-build-avr-mega2560-debug/CMakeCache.txt"
 
   if [ -f "${cache_file}" ]; then
     awk -F= -v key="${key}" '$1 ~ "^" key ":" {print $2; exit}' "${cache_file}"
@@ -96,6 +97,7 @@ fi
 
 cd "${repo_root}"
 
+cmake --preset "${preset}" >/dev/null
 cmake -S "${repo_root}/platform/interactiveConsole" \
   -B "${build_dir}" \
   -DCMAKE_BUILD_TYPE=Debug >/dev/null

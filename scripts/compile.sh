@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-uno-debug}"
+preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
 interactive_build_dir="${MOTION_CONTROL_INTERACTIVE_BUILD_DIR:-${repo_root}/platform/interactiveConsole/build}"
 
 cd "${repo_root}"

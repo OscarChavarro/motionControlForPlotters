@@ -9,7 +9,7 @@ endif()
 
 include(${MOTION_CONTROL_REPO_ROOT}/motionControlCore/motionControlCoreSources.cmake)
 
-set(ARDUINO_BOARD "uno" CACHE STRING "Arduino board preset: uno, nano, mega2560")
+set(ARDUINO_BOARD "mega2560" CACHE STRING "Arduino board preset: uno, nano, mega2560")
 set(ARDUINO_MCU "" CACHE STRING "Override AVR MCU, for example atmega328p")
 set(ARDUINO_F_CPU "" CACHE STRING "Override CPU clock, for example 16000000UL")
 set(ARDUINO_PROGRAMMER "" CACHE STRING "Override avrdude programmer")
@@ -59,7 +59,7 @@ if(ARDUINO_BOARD_NORMALIZED STREQUAL "uno")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "arduino")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "1000000")
+  set(_BOARD_MONITOR_BAUD "500000")
   set(_BOARD_DEFINE "ARDUINO_AVR_UNO")
 elseif(ARDUINO_BOARD_NORMALIZED STREQUAL "nano")
   set(_BOARD_MCU "atmega328p")
@@ -73,7 +73,7 @@ elseif(ARDUINO_BOARD_NORMALIZED STREQUAL "mega2560")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "wiring")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "1000000")
+  set(_BOARD_MONITOR_BAUD "500000")
   set(_BOARD_DEFINE "ARDUINO_AVR_MEGA2560")
 else()
   message(FATAL_ERROR
@@ -119,6 +119,7 @@ set(PLATFORM_ARDUINO_SOURCES
   src/AvrStepDirectionDriver.cpp
   src/AvrSystemClock.cpp
   src/AvrUartSerial.cpp
+  src/StepperMotorProgram.cpp
   src/main.cpp
 )
 

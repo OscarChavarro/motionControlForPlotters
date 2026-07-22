@@ -3,6 +3,7 @@
 #include "AvrStepDirectionDriver.h"
 #include "AvrSystemClock.h"
 #include "AvrUartSerial.h"
+#include "StepperMotorProgram.h"
 
 #include "hal/ExternalPowerSupplyDetector.h"
 #include "hal/GpioLed.h"
@@ -12,18 +13,10 @@
 #include "motion/stepperMotor/StepperMotor.h"
 #include "motion/stepperMotor/StepperMotorController.h"
 
-struct StepperMotorProgram {
-    StepperMotor motor;
-    uint16_t stepPulseMicroseconds;
-    uint16_t directionSetupMicroseconds;
-    uint16_t travelRotations;
-    uint16_t accelerationMilliseconds;
-    uint16_t cruiseMilliseconds;
-    uint16_t decelerationMilliseconds;
-};
+static const uint8_t COMMAND_BUFFER_SIZE = 32U;
 
 static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
-    {
+    StepperMotorProgram(
         StepperMotor(
             BIPOLAR_STEPPER_MOTOR,
             "Artillery D42HSA5401-23B",
@@ -36,8 +29,7 @@ static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
         STEPPER_MOTOR_TRAVEL_ROTATIONS,
         STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
         STEPPER_MOTOR_CRUISE_MILLISECONDS,
-        STEPPER_MOTOR_DECELERATION_MILLISECONDS
-    }
+        STEPPER_MOTOR_DECELERATION_MILLISECONDS)
 };
 
 static const uint8_t STEPPER_MOTOR_COUNT = static_cast<uint8_t>(
@@ -69,53 +61,140 @@ hasValidAndUniquePins(uint8_t motorIndex)
 }
 
 static void
-printStepperMotorConfiguration(
-    UartSerial& serial,
-    const StepperMotorProgram& program,
-    uint8_t motorIndex,
-    uint32_t maxMilliMicroStepsPerSecond,
-    bool motorReady)
+printAvailableCommands(UartSerial& serial)
 {
-    const StepperMotor& motor = program.motor;
-    serial.writeString("Stepper motor ");
-    serial.writeUnsigned(motorIndex);
-    serial.writeString(": referenceName=");
-    serial.writeString(motor.referenceName);
-    serial.writeString(" type=");
-    serial.writeString(motor.typeName());
-    serial.writeString(" fullSteps/rotation=");
-    serial.writeUnsigned(motor.fullStepsPerRotation);
-    serial.writeString(" microsteps=");
-    serial.writeUnsigned(motor.microStepsPerFullStep());
-    serial.writeString(" microsteps/rotation=");
-    serial.writeUnsigned(motor.microStepsPerRotation());
-    serial.writeString(" stepPin=");
-    serial.writeUnsigned(motor.stepPin);
-    serial.writeString(" directionPin=");
-    serial.writeUnsigned(motor.directionPin);
-    serial.writeLine("");
+    serial.writeLine("Available commands:");
+    serial.writeLine("  .  Print one telemetry line.");
+    serial.writeLine("  help  Show the list of available commands.");
+    serial.writeLine("  hardware  List hardware elements by pin.");
+    serial.writeLine("  console enable  Enable periodic console output.");
+    serial.writeLine("  console disable Disable periodic console output.");
+}
 
-    serial.writeString("Stepper motor ");
-    serial.writeUnsigned(motorIndex);
-    serial.writeString(" control=");
-    serial.writeString(motorReady ? "READY" : "INVALID_PIN_CONFIGURATION");
-    serial.writeString(" movement=forward ");
-    serial.writeUnsigned(program.travelRotations);
-    serial.writeString(" rotations/");
-    serial.writeUnsignedFixed3(
-        static_cast<uint32_t>(program.accelerationMilliseconds) +
-        program.cruiseMilliseconds + program.decelerationMilliseconds);
-    serial.writeString("s, backward ");
-    serial.writeUnsigned(program.travelRotations);
-    serial.writeString(" rotations maxSpeed=");
-    serial.writeUnsignedFixed3(
-        motor.milliRotationsPerSecondFromMilliMicroStepsPerSecond(
-            maxMilliMicroStepsPerSecond));
-    serial.writeString(" rps ");
-    serial.writeUnsignedFixed3(
-        motor.milliDegreesPerSecondFromMilliMicroStepsPerSecond(
-            maxMilliMicroStepsPerSecond));
-    serial.writeLine(" deg/s");
+static void
+printHardwareConfiguration(UartSerial& serial)
+{
+    serial.writeLine("Hardware by pin:");
+
+    for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
+        const StepperMotor& motor = STEPPER_MOTOR_PROGRAMS[i].motor;
+
+        serial.writeString("  D");
+        serial.writeUnsigned(motor.directionPin);
+        serial.writeString(": stepper motor ");
+        serial.writeUnsigned(i);
+        serial.writeString(" direction, ");
+        serial.writeString(motor.referenceName);
+        serial.writeLine("");
+
+        serial.writeString("  D");
+        serial.writeUnsigned(motor.stepPin);
+        serial.writeString(": stepper motor ");
+        serial.writeUnsigned(i);
+        serial.writeString(" step, ");
+        serial.writeString(motor.referenceName);
+        serial.writeLine("");
+    }
+
+    serial.writeLine("  A0: external power supply detector input");
+}
+
+static bool
+commandEquals(const char* command, const char* expected)
+{
+    while (*command != '\0' && *expected != '\0') {
+        if (*command != *expected) {
+            return false;
+        }
+        ++command;
+        ++expected;
+    }
+    return *command == '\0' && *expected == '\0';
+}
+
+static void
+handleCommand(
+    UartSerial& serial,
+    const char* command,
+    bool& consoleEnabled,
+    bool& singleTelemetryRequested)
+{
+    if (command[0] == '\0') {
+        return;
+    }
+
+    if (commandEquals(command, ".")) {
+        singleTelemetryRequested = true;
+        return;
+    }
+
+    if (commandEquals(command, "help")) {
+        printAvailableCommands(serial);
+        return;
+    }
+
+    if (commandEquals(command, "hardware")) {
+        printHardwareConfiguration(serial);
+        return;
+    }
+
+    if (commandEquals(command, "console enable")) {
+        consoleEnabled = true;
+        serial.writeLine("Console output enabled.");
+        return;
+    }
+
+    if (commandEquals(command, "console disable")) {
+        consoleEnabled = false;
+        serial.writeLine("Console output disabled.");
+        return;
+    }
+
+    serial.writeString("Unknown command: ");
+    serial.writeLine(command);
+}
+
+static void
+pollCommandInput(
+    UartSerial& serial,
+    char commandBuffer[COMMAND_BUFFER_SIZE],
+    uint8_t& commandLength,
+    bool& consoleEnabled,
+    bool& singleTelemetryRequested)
+{
+    while (serial.isReadAvailable()) {
+        const char received = serial.readChar();
+
+        if (received == '\r' || received == '\n') {
+            commandBuffer[commandLength] = '\0';
+            handleCommand(
+                serial,
+                commandBuffer,
+                consoleEnabled,
+                singleTelemetryRequested);
+            commandLength = 0U;
+            continue;
+        }
+
+        if (received == '\b' || received == 127) {
+            if (commandLength > 0U) {
+                --commandLength;
+            }
+            continue;
+        }
+
+        if (received < 32 || received > 126) {
+            continue;
+        }
+
+        if (commandLength + 1U < COMMAND_BUFFER_SIZE) {
+            commandBuffer[commandLength++] = received;
+        }
+        else {
+            serial.writeLine("Command too long.");
+            commandLength = 0U;
+        }
+    }
 }
 
 static void
@@ -177,33 +256,34 @@ printStepperMotorTelemetry(
     serial.writeString(" deg/s");
 }
 
-int
-main()
+static void
+initializeHardware(
+    SystemClock& systemClock,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    GpioLed& statusLed,
+    UartSerial& serial)
 {
-    AvrSystemClock avrSystemClock;
-    SystemClock& systemClock = avrSystemClock;
     systemClock.initialize();
-
-    AvrExternalPowerSupplyDetector avrExternalPowerSupplyDetector;
-    ExternalPowerSupplyDetector& externalPowerSupplyDetector =
-        avrExternalPowerSupplyDetector;
     externalPowerSupplyDetector.initialize();
-
-    AvrGpioLed avrStatusLed;
-    GpioLed& statusLed = avrStatusLed;
     statusLed.initialize();
-
-    AvrUartSerial avrSerial;
-    UartSerial& serial = avrSerial;
     serial.initialize(ARDUINO_SERIAL_BAUD);
     serial.writeString("motionControl boot build=");
     serial.writeLine(MOTION_CONTROL_BUILD_TIMESTAMP);
+    serial.writeLine(
+        "PSU filter: sample=10ms IIR=1/8 enable>=11.600V/100ms "
+        "disable<11.200V/100ms");
+    printAvailableCommands(serial);
+}
 
-    AvrStepDirectionDriver stepperMotorDrivers[STEPPER_MOTOR_COUNT];
-    StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT];
-    uint32_t maxMilliMicroStepsPerSecond[STEPPER_MOTOR_COUNT];
-    bool stepperMotorReady[STEPPER_MOTOR_COUNT];
-
+static void
+initializeStepperMotorPrograms(
+    UartSerial& serial,
+    AvrStepDirectionDriver stepperMotorDrivers[STEPPER_MOTOR_COUNT],
+    StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
+    uint32_t maxMilliMicroStepsPerSecond[STEPPER_MOTOR_COUNT],
+    bool stepperMotorReady[STEPPER_MOTOR_COUNT],
+    bool consoleEnabled)
+{
     for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
         const StepperMotorProgram& program = STEPPER_MOTOR_PROGRAMS[i];
         maxMilliMicroStepsPerSecond[i] =
@@ -226,65 +306,187 @@ main()
             program.cruiseMilliseconds,
             program.decelerationMilliseconds);
 
-        printStepperMotorConfiguration(
-            serial,
-            program,
-            i,
-            maxMilliMicroStepsPerSecond[i],
-            stepperMotorReady[i]);
+        if (consoleEnabled) {
+            program.printConfiguration(
+                serial,
+                i,
+                maxMilliMicroStepsPerSecond[i],
+                stepperMotorReady[i]);
+        }
+    }
+}
+
+static bool
+updateExternalPowerSupplyStatus(
+    UartSerial& serial,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    uint32_t now,
+    bool previousExternalPowerSupplyAvailable,
+    bool consoleEnabled)
+{
+    const bool newPowerSupplySample = externalPowerSupplyDetector.update(now);
+    const bool externalPowerSupplyAvailable =
+        externalPowerSupplyDetector.isExternalPowerSupplyAvailable();
+
+    if (consoleEnabled &&
+        newPowerSupplySample &&
+        externalPowerSupplyAvailable != previousExternalPowerSupplyAvailable) {
+        serial.writeString("EVENT PSU=");
+        serial.writeString(externalPowerSupplyAvailable ? "READY" : "LOST");
+        serial.writeString(" VMotor=");
+        serial.writeVoltageMillivolts(
+            externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+        serial.writeLine("");
     }
 
-    serial.writeLine(
-        "PSU filter: sample=10ms IIR=1/8 enable>=11.600V/100ms "
-        "disable<11.200V/100ms");
+    return externalPowerSupplyAvailable;
+}
+
+static void
+updateStepperMotorControllers(
+    StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
+    const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
+    uint32_t now,
+    bool externalPowerSupplyAvailable)
+{
+    for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
+        stepperMotorControllers[i].update(
+            now,
+            externalPowerSupplyAvailable && stepperMotorReady[i]);
+    }
+}
+
+static void
+printTelemetry(
+    UartSerial& serial,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    const StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT])
+{
+    serial.writeString("VMotor: ");
+    serial.writeVoltageMillivolts(
+        externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+    serial.writeString(" PSU: ");
+    serial.writeString(
+        externalPowerSupplyDetector.isExternalPowerSupplyAvailable() ?
+            "OK" :
+            "OFF");
+    for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
+        printStepperMotorTelemetry(
+            serial,
+            STEPPER_MOTOR_PROGRAMS[i].motor,
+            stepperMotorControllers[i],
+            i);
+    }
+    serial.writeLine("");
+}
+
+static void
+mainLoopBody(
+    SystemClock& systemClock,
+    UartSerial& serial,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
+    const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
+    uint32_t& lastTelemetryPrint,
+    bool& previousExternalPowerSupplyAvailable,
+    char commandBuffer[COMMAND_BUFFER_SIZE],
+    uint8_t& commandLength,
+    bool& consoleEnabled,
+    bool& singleTelemetryRequested)
+{
+    const uint32_t now = systemClock.millis();
+    pollCommandInput(
+        serial,
+        commandBuffer,
+        commandLength,
+        consoleEnabled,
+        singleTelemetryRequested);
+    const bool externalPowerSupplyAvailable =
+        updateExternalPowerSupplyStatus(
+            serial,
+            externalPowerSupplyDetector,
+            now,
+            previousExternalPowerSupplyAvailable,
+            consoleEnabled);
+    previousExternalPowerSupplyAvailable = externalPowerSupplyAvailable;
+
+    updateStepperMotorControllers(
+        stepperMotorControllers,
+        stepperMotorReady,
+        now,
+        externalPowerSupplyAvailable);
+
+    if (singleTelemetryRequested) {
+        printTelemetry(
+            serial,
+            externalPowerSupplyDetector,
+            stepperMotorControllers);
+        singleTelemetryRequested = false;
+    }
+    else if (consoleEnabled && (now - lastTelemetryPrint) >= 500UL) {
+        lastTelemetryPrint = now;
+        printTelemetry(
+            serial,
+            externalPowerSupplyDetector,
+            stepperMotorControllers);
+    }
+}
+
+int
+main()
+{
+    AvrSystemClock avrSystemClock;
+    SystemClock& systemClock = avrSystemClock;
+
+    AvrExternalPowerSupplyDetector avrExternalPowerSupplyDetector;
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector =
+        avrExternalPowerSupplyDetector;
+
+    AvrGpioLed avrStatusLed;
+    GpioLed& statusLed = avrStatusLed;
+
+    AvrUartSerial avrSerial;
+    UartSerial& serial = avrSerial;
+    bool consoleEnabled = false;
+
+    initializeHardware(
+        systemClock,
+        externalPowerSupplyDetector,
+        statusLed,
+        serial);
+
+    AvrStepDirectionDriver stepperMotorDrivers[STEPPER_MOTOR_COUNT];
+    StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT];
+    uint32_t maxMilliMicroStepsPerSecond[STEPPER_MOTOR_COUNT];
+    bool stepperMotorReady[STEPPER_MOTOR_COUNT];
+    initializeStepperMotorPrograms(
+        serial,
+        stepperMotorDrivers,
+        stepperMotorControllers,
+        maxMilliMicroStepsPerSecond,
+        stepperMotorReady,
+        consoleEnabled);
 
     uint32_t lastTelemetryPrint = systemClock.millis();
     bool previousExternalPowerSupplyAvailable = false;
+    bool singleTelemetryRequested = false;
+    char commandBuffer[COMMAND_BUFFER_SIZE] = {0};
+    uint8_t commandLength = 0U;
 
     //noinspection CppDFAEndlessLoop
     // NOLINTNEXTLINE(bugprone-infinite-loop)
     for (;;) {
-        const uint32_t now = systemClock.millis();
-        const bool newPowerSupplySample =
-            externalPowerSupplyDetector.update(now);
-        const bool externalPowerSupplyAvailable =
-            externalPowerSupplyDetector.isExternalPowerSupplyAvailable();
-
-        if (newPowerSupplySample &&
-            externalPowerSupplyAvailable !=
-                previousExternalPowerSupplyAvailable) {
-            serial.writeString("EVENT PSU=");
-            serial.writeString(
-                externalPowerSupplyAvailable ? "READY" : "LOST");
-            serial.writeString(" VMOTOR=");
-            serial.writeVoltageMillivolts(
-                externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
-            serial.writeLine("");
-        }
-        previousExternalPowerSupplyAvailable =
-            externalPowerSupplyAvailable;
-
-        for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
-            stepperMotorControllers[i].update(
-                now,
-                externalPowerSupplyAvailable && stepperMotorReady[i]);
-        }
-
-        if ((now - lastTelemetryPrint) >= 500UL) {
-            lastTelemetryPrint = now;
-            serial.writeString("VMOTOR: ");
-            serial.writeVoltageMillivolts(
-                externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
-            serial.writeString(" PSU: ");
-            serial.writeString(externalPowerSupplyAvailable ? "OK" : "OFF");
-            for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
-                printStepperMotorTelemetry(
-                    serial,
-                    STEPPER_MOTOR_PROGRAMS[i].motor,
-                    stepperMotorControllers[i],
-                    i);
-            }
-            serial.writeLine("");
-        }
+        mainLoopBody(
+            systemClock,
+            serial,
+            externalPowerSupplyDetector,
+            stepperMotorControllers,
+            stepperMotorReady,
+            lastTelemetryPrint,
+            previousExternalPowerSupplyAvailable,
+            commandBuffer,
+            commandLength,
+            consoleEnabled,
+            singleTelemetryRequested);
     }
 }

@@ -2,6 +2,7 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <clocale>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -29,13 +30,13 @@ class SerialPort {
       : file_descriptor_(-1), opened_(false) {
     file_descriptor_ = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (file_descriptor_ < 0) {
-      error_ = std::string("No se pudo abrir ") + path + ": " + strerror(errno);
+      error_ = std::string("Could not open ") + path + ": " + strerror(errno);
       return;
     }
 
     termios options;
     if (tcgetattr(file_descriptor_, &options) != 0) {
-      error_ = std::string("No se pudo leer configuracion serie: ") +
+      error_ = std::string("Could not read serial configuration: ") +
                strerror(errno);
       close(file_descriptor_);
       file_descriptor_ = -1;
@@ -50,7 +51,7 @@ class SerialPort {
       speed = B9600;
       use_custom_baud_rate = true;
 #else
-      error_ = "Baudios no soportados: " + std::to_string(baud_rate);
+      error_ = "Unsupported baud rate: " + std::to_string(baud_rate);
       close(file_descriptor_);
       file_descriptor_ = -1;
       return;
@@ -66,7 +67,7 @@ class SerialPort {
     options.c_cflag |= CS8;
 
     if (tcsetattr(file_descriptor_, TCSANOW, &options) != 0) {
-      error_ = std::string("No se pudo configurar el puerto serie: ") +
+      error_ = std::string("Could not configure serial port: ") +
                strerror(errno);
       close(file_descriptor_);
       file_descriptor_ = -1;
@@ -77,7 +78,7 @@ class SerialPort {
     if (use_custom_baud_rate) {
       speed_t custom_speed = static_cast<speed_t>(baud_rate);
       if (ioctl(file_descriptor_, IOSSIOSPEED, &custom_speed) != 0) {
-        error_ = std::string("No se pudo configurar la velocidad serie: ") +
+        error_ = std::string("Could not configure serial speed: ") +
                  strerror(errno);
         close(file_descriptor_);
         file_descriptor_ = -1;
@@ -125,13 +126,36 @@ class SerialPort {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
         break;
       }
-      output += "\n[error serie: ";
+      output += "\n[serial error: ";
       output += strerror(errno);
       output += "]\n";
       break;
     }
 
     return output;
+  }
+
+  bool writeText(const std::string &text) {
+    if (file_descriptor_ < 0) {
+      return false;
+    }
+
+    size_t offset = 0;
+    while (offset < text.size()) {
+      ssize_t bytes_written = write(
+          file_descriptor_,
+          text.data() + offset,
+          text.size() - offset);
+      if (bytes_written > 0) {
+        offset += static_cast<size_t>(bytes_written);
+        continue;
+      }
+      if (bytes_written < 0 && errno == EINTR) {
+        continue;
+      }
+      return false;
+    }
+    return true;
   }
 
  private:
@@ -188,25 +212,51 @@ class SerialPort {
 };
 
 static volatile sig_atomic_t keep_running = 1;
+static const short DEFAULT_TEXT_PAIR = 1;
+static const short SERIAL_TEXT_PAIR = 2;
+static const size_t MESSAGE_BUFFER_LIMIT_BYTES = 100U * 1024U * 1024U;
 
 static void handleSignal(int) {
   keep_running = 0;
 }
 
+static size_t totalDisplayLineCount(const std::deque<std::string> &lines,
+                                    const std::string &partial_line) {
+  return lines.size() + (partial_line.empty() ? 0U : 1U);
+}
+
+static const std::string &storedLineAt(const std::deque<std::string> &lines,
+                                       const std::string &partial_line,
+                                       size_t index) {
+  if (index < lines.size()) {
+    return lines[index];
+  }
+  return partial_line;
+}
+
+static void trimMessageBuffer(std::deque<std::string> &lines,
+                              size_t &stored_bytes,
+                              size_t limit_bytes) {
+  while (!lines.empty() && stored_bytes > limit_bytes) {
+    stored_bytes -= lines.front().size() + 1U;
+    lines.pop_front();
+  }
+}
+
 static void appendSerialText(std::deque<std::string> &lines,
+                             size_t &stored_bytes,
                              std::string &partial_line,
                              const std::string &text,
-                             size_t max_lines) {
+                             size_t limit_bytes) {
   for (char character : text) {
     if (character == '\r') {
       continue;
     }
     if (character == '\n') {
       lines.push_back(partial_line);
+      stored_bytes += partial_line.size() + 1U;
       partial_line.clear();
-      while (lines.size() > max_lines) {
-        lines.pop_front();
-      }
+      trimMessageBuffer(lines, stored_bytes, limit_bytes);
       continue;
     }
     if (character >= 32 || character == '\t') {
@@ -215,32 +265,106 @@ static void appendSerialText(std::deque<std::string> &lines,
   }
 }
 
+static void drawScrollbar(int top_row,
+                          int height,
+                          int column,
+                          size_t total_lines,
+                          int visible_rows,
+                          size_t first_visible_line) {
+  static const char *up_arrow = "↑";
+  static const char *down_arrow = "↓";
+  static const char *track_char = "│";
+  static const char *thumb_char = "┃";
+
+  if (height < 3 || column < 0 || column >= COLS) {
+    return;
+  }
+
+  const int track_rows = std::max(1, height - 2);
+
+  size_t thumb_length = static_cast<size_t>(track_rows);
+  size_t thumb_start = 0U;
+  if (total_lines > static_cast<size_t>(visible_rows) && visible_rows > 0) {
+    thumb_length = std::max<size_t>(
+        1U,
+        (static_cast<size_t>(visible_rows) * static_cast<size_t>(track_rows)) /
+            total_lines);
+    thumb_length = std::min<size_t>(thumb_length, static_cast<size_t>(track_rows));
+
+    const size_t scrollable_lines = total_lines - static_cast<size_t>(visible_rows);
+    const size_t max_thumb_start = static_cast<size_t>(track_rows) - thumb_length;
+    thumb_start =
+        (scrollable_lines == 0U) ?
+            0U :
+            (first_visible_line * max_thumb_start) / scrollable_lines;
+  }
+
+  attron(COLOR_PAIR(DEFAULT_TEXT_PAIR));
+  mvaddstr(top_row, column, up_arrow);
+  for (int index = 0; index < track_rows; ++index) {
+    const bool inside_thumb =
+        static_cast<size_t>(index) >= thumb_start &&
+        static_cast<size_t>(index) < (thumb_start + thumb_length);
+    mvaddstr(
+        top_row + 1 + index,
+        column,
+        inside_thumb ? thumb_char : track_char);
+  }
+  mvaddstr(top_row + height - 1, column, down_arrow);
+  attroff(COLOR_PAIR(DEFAULT_TEXT_PAIR));
+}
+
 static void drawMessages(int top_height,
                          const std::deque<std::string> &lines,
+                         size_t scroll_offset,
                          const std::string &partial_line,
                          const std::string &status) {
   mvhline(0, 0, 0, COLS);
-  attron(A_BOLD);
-  mvprintw(0, 2, "Mensajes recibidos");
-  attroff(A_BOLD);
+  attron(COLOR_PAIR(DEFAULT_TEXT_PAIR) | A_BOLD);
+  mvprintw(0, 2, "Received messages");
+  attroff(COLOR_PAIR(DEFAULT_TEXT_PAIR) | A_BOLD);
   if (!status.empty()) {
+    attron(COLOR_PAIR(DEFAULT_TEXT_PAIR));
     mvprintw(0, std::max(20, COLS - static_cast<int>(status.size()) - 2),
              "%s", status.c_str());
+    attroff(COLOR_PAIR(DEFAULT_TEXT_PAIR));
   }
-  mvhline(1, 0, ACS_HLINE, COLS);
 
-  int row = 2;
-  int available_rows = std::max(0, top_height - 3);
-  int stored_count = static_cast<int>(lines.size());
-  int start = std::max(0, stored_count - available_rows);
-  for (int index = start; index < stored_count && row < top_height; ++index) {
-    mvaddnstr(row, 1, lines[static_cast<size_t>(index)].c_str(), COLS - 2);
+  int row = 1;
+  const int scrollbar_column = COLS - 1;
+  const int text_width = std::max(0, COLS - 2);
+  int available_rows = std::max(0, top_height - 1);
+  const size_t total_lines = totalDisplayLineCount(lines, partial_line);
+  const size_t clamped_scroll_offset =
+      (total_lines > static_cast<size_t>(available_rows)) ?
+          std::min(
+              scroll_offset,
+              total_lines - static_cast<size_t>(available_rows)) :
+          0U;
+  const size_t first_visible_line =
+      (total_lines > static_cast<size_t>(available_rows)) ?
+          total_lines - static_cast<size_t>(available_rows) -
+              clamped_scroll_offset :
+          0U;
+
+  attron(COLOR_PAIR(SERIAL_TEXT_PAIR) | A_DIM);
+  for (int index = 0; index < available_rows && row < top_height; ++index) {
+    const size_t line_index = first_visible_line + static_cast<size_t>(index);
+    if (line_index >= total_lines) {
+      break;
+    }
+    const std::string &line = storedLineAt(lines, partial_line, line_index);
+    mvaddnstr(row, 1, line.c_str(), text_width);
     ++row;
   }
-
-  if (!partial_line.empty() && row < top_height) {
-    mvaddnstr(row, 1, partial_line.c_str(), COLS - 2);
-  }
+  attroff(COLOR_PAIR(SERIAL_TEXT_PAIR) | A_DIM);
+  drawScrollbar(
+      1,
+      top_height - 1,
+      scrollbar_column,
+      total_lines,
+      available_rows,
+      first_visible_line);
 }
 
 static void drawBars(int first_row,
@@ -285,11 +409,157 @@ static void drawBars(int first_row,
 static void drawFooter() {
   attron(A_REVERSE);
   mvhline(LINES - 1, 0, ' ', COLS);
-  mvprintw(LINES - 1, 2, "<esc> salir");
+  mvprintw(LINES - 1, 2, "<esc> exit");
   attroff(A_REVERSE);
 }
 
+static void drawInputLine(const std::string &input_line, size_t cursor_index) {
+  const int input_row = LINES - 2;
+  const int prompt_column = 2;
+  const int text_column = prompt_column + 2;
+  const int available_width = std::max(0, COLS - text_column - 1);
+  int visible_start = 0;
+
+  if (available_width > 0 && static_cast<int>(cursor_index) >= available_width) {
+    visible_start = static_cast<int>(cursor_index) - available_width + 1;
+  }
+
+  attron(COLOR_PAIR(DEFAULT_TEXT_PAIR));
+  mvhline(input_row, 0, ' ', COLS);
+  mvprintw(input_row, prompt_column, "> ");
+  attroff(COLOR_PAIR(DEFAULT_TEXT_PAIR));
+
+  if (available_width <= 0) {
+    return;
+  }
+
+  std::string visible_text = input_line.substr(
+      static_cast<size_t>(visible_start),
+      static_cast<size_t>(available_width));
+  attron(COLOR_PAIR(DEFAULT_TEXT_PAIR));
+  mvaddnstr(input_row, text_column, visible_text.c_str(), available_width);
+  attroff(COLOR_PAIR(DEFAULT_TEXT_PAIR));
+
+  int cursor_column = text_column + static_cast<int>(cursor_index) - visible_start;
+  cursor_column = std::max(text_column, std::min(COLS - 1, cursor_column));
+
+  const bool cursor_on_character =
+      static_cast<size_t>(visible_start) + static_cast<size_t>(cursor_column - text_column) <
+      input_line.size();
+  const char cursor_character =
+      cursor_on_character ?
+          input_line[static_cast<size_t>(visible_start) +
+                     static_cast<size_t>(cursor_column - text_column)] :
+          ' ';
+  attron(COLOR_PAIR(DEFAULT_TEXT_PAIR) | A_UNDERLINE);
+  mvaddch(input_row, cursor_column, cursor_character);
+  attroff(COLOR_PAIR(DEFAULT_TEXT_PAIR) | A_UNDERLINE);
+}
+
+static bool handleInputEditing(int key,
+                               std::string &input_line,
+                               size_t &cursor_index) {
+  if (key == ERR) {
+    return false;
+  }
+
+  if (key == KEY_LEFT) {
+    if (cursor_index > 0U) {
+      --cursor_index;
+    }
+    return false;
+  }
+
+  if (key == KEY_RIGHT) {
+    if (cursor_index < input_line.size()) {
+      ++cursor_index;
+    }
+    return false;
+  }
+
+  if (key == KEY_BACKSPACE || key == 127 || key == '\b') {
+    if (cursor_index > 0 && !input_line.empty()) {
+      input_line.erase(cursor_index - 1, 1);
+      --cursor_index;
+    }
+    return false;
+  }
+
+  if (key == KEY_DC) {
+    if (cursor_index < input_line.size()) {
+      input_line.erase(cursor_index, 1);
+    }
+    return false;
+  }
+
+  if (key == KEY_HOME || key == 1) {
+    cursor_index = 0;
+    return false;
+  }
+
+  if (key == KEY_END || key == 5) {
+    cursor_index = input_line.size();
+    return false;
+  }
+
+  if (key == 21) {
+    input_line.clear();
+    cursor_index = 0U;
+    return false;
+  }
+
+  if (key == '\n' || key == '\r' || key == KEY_ENTER) {
+    return true;
+  }
+
+  if (key >= 32 && key <= 126) {
+    input_line.insert(cursor_index, 1, static_cast<char>(key));
+    ++cursor_index;
+  }
+
+  return false;
+}
+
+static void navigateCommandHistoryUp(const std::vector<std::string> &command_history,
+                                     std::string &history_draft,
+                                     size_t &history_index,
+                                     std::string &input_line,
+                                     size_t &cursor_index) {
+  if (command_history.empty() || history_index == 0U) {
+    return;
+  }
+
+  if (history_index == command_history.size()) {
+    history_draft = input_line;
+  }
+
+  --history_index;
+  input_line = command_history[history_index];
+  cursor_index = input_line.size();
+}
+
+static void navigateCommandHistoryDown(
+    const std::vector<std::string> &command_history,
+    const std::string &history_draft,
+    size_t &history_index,
+    std::string &input_line,
+    size_t &cursor_index) {
+  if (command_history.empty() || history_index >= command_history.size()) {
+    return;
+  }
+
+  ++history_index;
+  if (history_index == command_history.size()) {
+    input_line = history_draft;
+  } else {
+    input_line = command_history[history_index];
+  }
+  cursor_index = input_line.size();
+}
+
 static int runConsole(const char *port, int baud_rate) {
+  setlocale(LC_ALL, "");
+
   SerialPort serial(port, baud_rate);
   if (!serial.isOpen()) {
     fprintf(stderr, "%s\n", serial.error().c_str());
@@ -302,10 +572,17 @@ static int runConsole(const char *port, int baud_rate) {
   keypad(stdscr, TRUE);
   nodelay(stdscr, TRUE);
   curs_set(0);
+  start_color();
   use_default_colors();
+  init_pair(DEFAULT_TEXT_PAIR, COLOR_WHITE, -1);
+  init_pair(SERIAL_TEXT_PAIR, COLOR_WHITE, -1);
 
   std::deque<std::string> lines;
+  size_t stored_bytes = 0;
   std::string partial_line;
+  std::string input_line;
+  std::string history_draft;
+  std::vector<std::string> command_history;
   std::vector<BarControl> bars = {
       {"X", 50},
       {"Y", 50},
@@ -313,37 +590,107 @@ static int runConsole(const char *port, int baud_rate) {
       {"F", 50},
   };
   size_t selected_bar = 0;
+  size_t message_scroll_offset = 0;
+  size_t input_cursor_index = 0;
+  size_t history_index = 0;
   std::string status = std::string(port) + " " + std::to_string(baud_rate) +
                        " baud";
 
   while (keep_running) {
     std::string serial_text = serial.readAvailable();
     if (!serial_text.empty()) {
-      appendSerialText(lines, partial_line, serial_text, 1000);
+      appendSerialText(
+          lines,
+          stored_bytes,
+          partial_line,
+          serial_text,
+          MESSAGE_BUFFER_LIMIT_BYTES);
     }
 
     int key = getch();
     if (key == 27) {
       break;
     }
-    if (key == KEY_LEFT && selected_bar > 0) {
-      --selected_bar;
-    } else if (key == KEY_RIGHT && selected_bar + 1 < bars.size()) {
-      ++selected_bar;
-    } else if (key == KEY_UP) {
-      bars[selected_bar].value = std::min(100, bars[selected_bar].value + 1);
+    if (handleInputEditing(key, input_line, input_cursor_index)) {
+      std::string message_to_send = input_line + "\n";
+      if (!serial.writeText(message_to_send)) {
+        appendSerialText(
+            lines,
+            stored_bytes,
+            partial_line,
+            "[serial write error]\n",
+            MESSAGE_BUFFER_LIMIT_BYTES);
+      }
+      if (!input_line.empty()) {
+        command_history.push_back(input_line);
+      }
+      input_line.clear();
+      history_draft.clear();
+      history_index = command_history.size();
+      input_cursor_index = 0;
+    } else if (key == KEY_PPAGE) {
+      int footer_height = 2;
+      int bars_height = std::min(10, std::max(0, LINES / 4));
+      int messages_height = std::max(3, LINES - bars_height - footer_height);
+      int visible_rows = std::max(1, messages_height - 1);
+      message_scroll_offset += static_cast<size_t>(visible_rows);
+      size_t total_lines = totalDisplayLineCount(lines, partial_line);
+      if (total_lines > static_cast<size_t>(visible_rows)) {
+        message_scroll_offset = std::min(
+            message_scroll_offset,
+            total_lines - static_cast<size_t>(visible_rows));
+      } else {
+        message_scroll_offset = 0;
+      }
+    } else if (key == KEY_NPAGE) {
+      int footer_height = 2;
+      int bars_height = std::min(10, std::max(0, LINES / 4));
+      int messages_height = std::max(3, LINES - bars_height - footer_height);
+      int visible_rows = std::max(1, messages_height - 1);
+      size_t page_size = static_cast<size_t>(visible_rows);
+      message_scroll_offset =
+          (message_scroll_offset > page_size) ?
+              message_scroll_offset - page_size :
+              0U;
     } else if (key == KEY_DOWN) {
-      bars[selected_bar].value = std::max(0, bars[selected_bar].value - 1);
+      navigateCommandHistoryDown(
+          command_history,
+          history_draft,
+          history_index,
+          input_line,
+          input_cursor_index);
+    } else if (key == KEY_UP) {
+      navigateCommandHistoryUp(
+          command_history,
+          history_draft,
+          history_index,
+          input_line,
+          input_cursor_index);
     } else if (key == KEY_RESIZE) {
       clear();
     }
 
     erase();
-    int footer_height = 1;
+    int footer_height = 2;
     int bars_height = std::min(10, std::max(0, LINES / 4));
     int messages_height = std::max(3, LINES - bars_height - footer_height);
-    drawMessages(messages_height, lines, partial_line, status);
+    int visible_rows = std::max(1, messages_height - 1);
+    size_t total_lines = totalDisplayLineCount(lines, partial_line);
+    if (total_lines <= static_cast<size_t>(visible_rows)) {
+      message_scroll_offset = 0;
+    } else {
+      message_scroll_offset = std::min(
+          message_scroll_offset,
+          total_lines - static_cast<size_t>(visible_rows));
+    }
+    drawMessages(
+        messages_height,
+        lines,
+        message_scroll_offset,
+        partial_line,
+        status);
     drawBars(messages_height, bars_height, bars, selected_bar);
+    drawInputLine(input_line, input_cursor_index);
     drawFooter();
     refresh();
 
