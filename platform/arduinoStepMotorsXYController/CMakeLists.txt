@@ -16,12 +16,12 @@ set(ARDUINO_PROGRAMMER "" CACHE STRING "Override avrdude programmer")
 set(ARDUINO_PORT "/dev/ttyACM0" CACHE STRING "Upload/monitor serial port")
 set(ARDUINO_UPLOAD_BAUD "" CACHE STRING "Override avrdude baud rate")
 set(ARDUINO_MONITOR_BAUD "" CACHE STRING "Override monitor serial baud rate")
-set(EXTERNAL_VOLTAGE_PSU "12" CACHE STRING
+set(EXTERNAL_VOLTAGE_PSU "24" CACHE STRING
   "Expected external power supply voltage in volts")
-set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "0.4" CACHE STRING
+set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "1.0" CACHE STRING
   "Allowed external power supply voltage tolerance in volts")
-set(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS "100000" CACHE STRING
-  "Voltage divider resistor in ohms between VIN and A0")
+set(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS "220000" CACHE STRING
+  "Legacy variable name; voltage divider resistor in ohms between VMOT and A0")
 set(EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS "47000" CACHE STRING
   "Voltage divider resistor in ohms between A0 and GND")
 set(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL "5000" CACHE STRING
@@ -59,7 +59,7 @@ if(ARDUINO_BOARD_NORMALIZED STREQUAL "uno")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "arduino")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "500000")
+  set(_BOARD_MONITOR_BAUD "250000")
   set(_BOARD_DEFINE "ARDUINO_AVR_UNO")
 elseif(ARDUINO_BOARD_NORMALIZED STREQUAL "nano")
   set(_BOARD_MCU "atmega328p")
@@ -73,7 +73,7 @@ elseif(ARDUINO_BOARD_NORMALIZED STREQUAL "mega2560")
   set(_BOARD_F_CPU "16000000UL")
   set(_BOARD_PROGRAMMER "wiring")
   set(_BOARD_UPLOAD_BAUD "115200")
-  set(_BOARD_MONITOR_BAUD "500000")
+  set(_BOARD_MONITOR_BAUD "250000")
   set(_BOARD_DEFINE "ARDUINO_AVR_MEGA2560")
 else()
   message(FATAL_ERROR

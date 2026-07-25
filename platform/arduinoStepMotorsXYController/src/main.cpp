@@ -69,6 +69,8 @@ printAvailableCommands(UartSerial& serial)
     serial.writeLine("  hardware  List hardware elements by pin.");
     serial.writeLine("  console enable  Enable periodic console output.");
     serial.writeLine("  console disable Disable periodic console output.");
+    serial.writeLine("  test enable  Enable the default back-and-forth test movement.");
+    serial.writeLine("  test disable Disable the default back-and-forth test movement.");
 }
 
 static void
@@ -117,7 +119,8 @@ handleCommand(
     UartSerial& serial,
     const char* command,
     bool& consoleEnabled,
-    bool& singleTelemetryRequested)
+    bool& singleTelemetryRequested,
+    bool& testMovement)
 {
     if (command[0] == '\0') {
         return;
@@ -150,6 +153,18 @@ handleCommand(
         return;
     }
 
+    if (commandEquals(command, "test enable")) {
+        testMovement = true;
+        serial.writeLine("Test movement enabled.");
+        return;
+    }
+
+    if (commandEquals(command, "test disable")) {
+        testMovement = false;
+        serial.writeLine("Test movement disabled.");
+        return;
+    }
+
     serial.writeString("Unknown command: ");
     serial.writeLine(command);
 }
@@ -160,7 +175,8 @@ pollCommandInput(
     char commandBuffer[COMMAND_BUFFER_SIZE],
     uint8_t& commandLength,
     bool& consoleEnabled,
-    bool& singleTelemetryRequested)
+    bool& singleTelemetryRequested,
+    bool& testMovement)
 {
     while (serial.isReadAvailable()) {
         const char received = serial.readChar();
@@ -171,7 +187,8 @@ pollCommandInput(
                 serial,
                 commandBuffer,
                 consoleEnabled,
-                singleTelemetryRequested);
+                singleTelemetryRequested,
+                testMovement);
             commandLength = 0U;
             continue;
         }
@@ -347,12 +364,13 @@ updateStepperMotorControllers(
     StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
     uint32_t now,
-    bool externalPowerSupplyAvailable)
+    bool externalPowerSupplyAvailable,
+    bool testMovement)
 {
     for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
         stepperMotorControllers[i].update(
             now,
-            externalPowerSupplyAvailable && stepperMotorReady[i]);
+            testMovement && externalPowerSupplyAvailable && stepperMotorReady[i]);
     }
 }
 
@@ -392,7 +410,8 @@ mainLoopBody(
     char commandBuffer[COMMAND_BUFFER_SIZE],
     uint8_t& commandLength,
     bool& consoleEnabled,
-    bool& singleTelemetryRequested)
+    bool& singleTelemetryRequested,
+    bool& testMovement)
 {
     const uint32_t now = systemClock.millis();
     pollCommandInput(
@@ -400,7 +419,8 @@ mainLoopBody(
         commandBuffer,
         commandLength,
         consoleEnabled,
-        singleTelemetryRequested);
+        singleTelemetryRequested,
+        testMovement);
     const bool externalPowerSupplyAvailable =
         updateExternalPowerSupplyStatus(
             serial,
@@ -414,7 +434,8 @@ mainLoopBody(
         stepperMotorControllers,
         stepperMotorReady,
         now,
-        externalPowerSupplyAvailable);
+        externalPowerSupplyAvailable,
+        testMovement);
 
     if (singleTelemetryRequested) {
         printTelemetry(
@@ -470,6 +491,7 @@ main()
     uint32_t lastTelemetryPrint = systemClock.millis();
     bool previousExternalPowerSupplyAvailable = false;
     bool singleTelemetryRequested = false;
+    bool testMovement = true;
     char commandBuffer[COMMAND_BUFFER_SIZE] = {0};
     uint8_t commandLength = 0U;
 
@@ -487,6 +509,7 @@ main()
             commandBuffer,
             commandLength,
             consoleEnabled,
-            singleTelemetryRequested);
+            singleTelemetryRequested,
+            testMovement);
     }
 }

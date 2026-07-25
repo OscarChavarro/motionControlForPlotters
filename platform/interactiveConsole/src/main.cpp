@@ -181,6 +181,11 @@ class SerialPort {
         speed = B230400;
         return true;
 #endif
+#ifdef B250000
+      case 250000:
+        speed = B250000;
+        return true;
+#endif
 #ifdef B460800
       case 460800:
         speed = B460800;

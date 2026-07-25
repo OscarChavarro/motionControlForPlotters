@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 preset="${MOTION_CONTROL_CMAKE_PRESET:-avr-mega2560-debug}"
 build_dir="${MOTION_CONTROL_BUILD_DIR:-${repo_root}/cmake-build-avr-mega2560-debug}"
-baud="${ARDUINO_MONITOR_BAUD:-500000}"
+baud="${ARDUINO_MONITOR_BAUD:-250000}"
 
 read_cache_value() {
   local key="$1"
