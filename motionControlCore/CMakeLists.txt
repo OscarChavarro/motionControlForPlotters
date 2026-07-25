@@ -28,4 +28,44 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "avr")
   add_test(
     NAME motionControlCore.StepperMotorController
     COMMAND motionControlCoreStepperMotorControllerTest)
+
+  add_executable(motionControlCoreTmc2209CrcTest
+    src/test/cpp/drivers/tmc/Tmc2209CrcTest.cpp)
+  target_link_libraries(motionControlCoreTmc2209CrcTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.Tmc2209Crc
+    COMMAND motionControlCoreTmc2209CrcTest)
+
+  add_executable(motionControlCoreTmc2209DatagramTest
+    src/test/cpp/drivers/tmc/Tmc2209DatagramTest.cpp)
+  target_link_libraries(motionControlCoreTmc2209DatagramTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.Tmc2209Datagram
+    COMMAND motionControlCoreTmc2209DatagramTest)
+
+  add_executable(motionControlCoreTmc2209RegistersTest
+    src/test/cpp/drivers/tmc/Tmc2209RegistersTest.cpp)
+  target_link_libraries(motionControlCoreTmc2209RegistersTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.Tmc2209Registers
+    COMMAND motionControlCoreTmc2209RegistersTest)
+
+  add_executable(motionControlCoreTmc2209UartDriverTest
+    src/test/cpp/drivers/tmc/Tmc2209UartDriverTest.cpp)
+  target_link_libraries(motionControlCoreTmc2209UartDriverTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.Tmc2209UartDriver
+    COMMAND motionControlCoreTmc2209UartDriverTest)
+
+  add_executable(motionControlCoreTmc2209StepperMotorDriverTest
+    src/test/cpp/drivers/tmc/Tmc2209StepperMotorDriverTest.cpp)
+  target_link_libraries(motionControlCoreTmc2209StepperMotorDriverTest
+    PRIVATE motionControlCore)
+  add_test(
+    NAME motionControlCore.Tmc2209StepperMotorDriver
+    COMMAND motionControlCoreTmc2209StepperMotorDriverTest)
 endif()

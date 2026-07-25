@@ -119,6 +119,7 @@ set(PLATFORM_ARDUINO_SOURCES
   src/AvrStepDirectionDriver.cpp
   src/AvrSystemClock.cpp
   src/AvrUartSerial.cpp
+  src/AvrUsartSerial.cpp
   src/StepperMotorProgram.cpp
   src/main.cpp
 )

@@ -9,14 +9,20 @@ StepperMotorProgram::StepperMotorProgram(
     uint16_t travelRotationsValue,
     uint16_t accelerationMillisecondsValue,
     uint16_t cruiseMillisecondsValue,
-    uint16_t decelerationMillisecondsValue)
+    uint16_t decelerationMillisecondsValue,
+    const char* driverDescriptionValue,
+    uint8_t uartReceivePinValue,
+    uint8_t uartTransmitPinValue)
     : motor(motorValue),
       stepPulseMicroseconds(stepPulseMicrosecondsValue),
       directionSetupMicroseconds(directionSetupMicrosecondsValue),
       travelRotations(travelRotationsValue),
       accelerationMilliseconds(accelerationMillisecondsValue),
       cruiseMilliseconds(cruiseMillisecondsValue),
-      decelerationMilliseconds(decelerationMillisecondsValue)
+      decelerationMilliseconds(decelerationMillisecondsValue),
+      driverDescription(driverDescriptionValue),
+      uartReceivePin(uartReceivePinValue),
+      uartTransmitPin(uartTransmitPinValue)
 {
 }
 

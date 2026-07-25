@@ -29,7 +29,10 @@ static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
         STEPPER_MOTOR_TRAVEL_ROTATIONS,
         STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
         STEPPER_MOTOR_CRUISE_MILLISECONDS,
-        STEPPER_MOTOR_DECELERATION_MILLISECONDS)
+        STEPPER_MOTOR_DECELERATION_MILLISECONDS,
+        "A4988",
+        StepperMotorProgram::NO_UART_PIN,
+        StepperMotorProgram::NO_UART_PIN)
 };
 
 static const uint8_t STEPPER_MOTOR_COUNT = static_cast<uint8_t>(
@@ -79,22 +82,27 @@ printHardwareConfiguration(UartSerial& serial)
     serial.writeLine("Hardware by pin:");
 
     for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
-        const StepperMotor& motor = STEPPER_MOTOR_PROGRAMS[i].motor;
+        const StepperMotorProgram& program = STEPPER_MOTOR_PROGRAMS[i];
+        const StepperMotor& motor = program.motor;
 
         serial.writeString("  D");
         serial.writeUnsigned(motor.directionPin);
-        serial.writeString(": stepper motor ");
-        serial.writeUnsigned(i);
-        serial.writeString(" direction, ");
-        serial.writeString(motor.referenceName);
-        serial.writeLine("");
-
-        serial.writeString("  D");
+        serial.writeString(", D");
         serial.writeUnsigned(motor.stepPin);
         serial.writeString(": stepper motor ");
         serial.writeUnsigned(i);
-        serial.writeString(" step, ");
+        serial.writeString(" (direction, step), ");
         serial.writeString(motor.referenceName);
+        serial.writeString(" driven by ");
+        serial.writeString(program.driverDescription);
+
+        if (program.uartReceivePin != StepperMotorProgram::NO_UART_PIN) {
+            serial.writeString(" (UART: RX=D");
+            serial.writeUnsigned(program.uartReceivePin);
+            serial.writeString(", TX=D");
+            serial.writeUnsigned(program.uartTransmitPin);
+            serial.writeString(")");
+        }
         serial.writeLine("");
     }
 

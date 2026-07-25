@@ -1,4 +1,9 @@
 set(MOTION_CONTROL_CORE_SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/drivers/tmc/Tmc2209Crc.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/drivers/tmc/Tmc2209Datagram.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/drivers/tmc/Tmc2209Registers.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/drivers/tmc/Tmc2209StepperMotorDriver.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/drivers/tmc/Tmc2209UartDriver.cpp
   ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/hal/UartSerial.cpp
   ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/motion/control/raster/Rasterizer2D.cpp
   ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/motion/stepperMotor/StepperMotor.cpp
