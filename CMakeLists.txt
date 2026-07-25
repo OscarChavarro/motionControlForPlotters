@@ -34,7 +34,7 @@ set(ARDUINO_MONITOR_BAUD "" CACHE STRING "Override monitor baud rate")
 set(ARDUINO_PROGRAMMER "" CACHE STRING "Override avrdude programmer")
 set(EXTERNAL_VOLTAGE_PSU "24" CACHE STRING
   "Expected external power supply voltage in volts")
-set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "1.0" CACHE STRING
+set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "1.5" CACHE STRING
   "Allowed external power supply voltage tolerance in volts")
 set(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS "220000" CACHE STRING
   "Legacy variable name; voltage divider resistor in ohms between VMOT and A0")

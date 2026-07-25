@@ -77,6 +77,31 @@ K-type thermocouple probe.
 
 Source: [LOMVUM T28B Automatic Digital Multimeter](https://www.amazon.es/dp/B07FXH2R5M)
 
+## RUZIZAO regulated bench power supply
+
+Adjustable bench power supply used to provide the external `VMOT` motor
+supply voltage, with digital display, rotary encoder setpoint controls, and a
+built-in USB fast-charging output.
+
+| Spec | Value |
+|---|---|
+| Model | RUZIZAO Regulated Power Supply |
+| Output voltage | 0-30 V, adjustable |
+| Output current | 0-10 A, adjustable |
+| USB output | 18 W fast charging |
+| Protection | OCP (over-current), OVP (over-voltage) |
+| Display | Digital, with rotary encoder setpoint controls |
+
+Source: [RUZIZAO Regulated Power Supply 30V 10A](https://www.amazon.es/dp/B0DMW7M7PS)
+
+Fritzing part: no exact match found; the closest available part is the
+community-contributed [Hanmatek HM305 bench power supply](https://forum.fritzing.org/t/dc-power-supply/20680)
+(`hanmatek-HM305.fzpz`, direct download at
+[forum.fritzing.org/uploads/short-url/165qJwjxYqDpQ5ndsKmUOZ4f1SG.fzpz](https://forum.fritzing.org/uploads/short-url/165qJwjxYqDpQ5ndsKmUOZ4f1SG.fzpz)),
+which shares the same boxed form factor: digital display, voltage/current
+adjustment knobs, and DC output terminals. Import it via **Part > Import...**
+in Fritzing.
+
 # Arduino PINOUT
 
 | Pin | UNO | MEGA2560 | Direction | Use |
@@ -160,7 +185,7 @@ the firmware as compile-time definitions:
 | Variable | Default | Used for |
 |---|---:|---|
 | `EXTERNAL_VOLTAGE_PSU` | `24` | Expected external power supply voltage, in volts |
-| `EXTERNAL_VOLTAGE_PSU_TOLERANCE` | `1.0` | Accepted voltage tolerance below `EXTERNAL_VOLTAGE_PSU`, in volts |
+| `EXTERNAL_VOLTAGE_PSU_TOLERANCE` | `1.5` | Accepted voltage tolerance below `EXTERNAL_VOLTAGE_PSU`, in volts |
 | `EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS` | `220000` | Legacy variable name; resistor between `VMOT` and `A0`, in ohms |
 | `EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS` | `47000` | Resistor between `A0` and `GND`, in ohms |
 | `PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL` | `5000` | Minimum interval between missing-PSU error messages, in milliseconds |
@@ -174,7 +199,7 @@ The expected PSU voltage is configured at CMake level with:
 The detector accepts a voltage tolerance around that value:
 
 ```bash
--DEXTERNAL_VOLTAGE_PSU_TOLERANCE=1.0
+-DEXTERNAL_VOLTAGE_PSU_TOLERANCE=1.5
 ```
 
 The voltage divider is configured with:
@@ -202,9 +227,9 @@ above:
 EXTERNAL_VOLTAGE_PSU - EXTERNAL_VOLTAGE_PSU_TOLERANCE
 ```
 
-With the default values, this requires 100 ms at or above `23.0V`. Once
+With the default values, this requires 100 ms at or above `22.5V`. Once
 available, the supply is declared lost only after 10 consecutive filtered
-samples below `22.6V`. The 400 mV hysteresis prevents repeated transitions
+samples below `22.1V`. The 400 mV hysteresis prevents repeated transitions
 close to the activation threshold.
 
 Confirmed supply transitions produce a concise event containing the filtered
