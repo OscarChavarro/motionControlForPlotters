@@ -69,7 +69,8 @@ printAvailableCommands(UartSerial& serial)
     serial.writeLine("Available commands:");
     serial.writeLine("  .  Print one telemetry line.");
     serial.writeLine("  help  Show the list of available commands.");
-    serial.writeLine("  hardware  List hardware elements by pin.");
+    serial.writeLine("  hardware  List hardware elements by pin, tagged [id].");
+    serial.writeLine("  get <id>  Print status of one hardware element.");
     serial.writeLine("  console enable  Enable periodic console output.");
     serial.writeLine("  console disable Disable periodic console output.");
     serial.writeLine("  test enable  Enable the default back-and-forth test movement.");
@@ -85,7 +86,9 @@ printHardwareConfiguration(UartSerial& serial)
         const StepperMotorProgram& program = STEPPER_MOTOR_PROGRAMS[i];
         const StepperMotor& motor = program.motor;
 
-        serial.writeString("  D");
+        serial.writeString("[");
+        serial.writeUnsigned(i);
+        serial.writeString("] D");
         serial.writeUnsigned(motor.directionPin);
         serial.writeString(", D");
         serial.writeUnsigned(motor.stepPin);
@@ -106,7 +109,10 @@ printHardwareConfiguration(UartSerial& serial)
         serial.writeLine("");
     }
 
-    serial.writeLine("  A0: external power supply detector input");
+    serial.writeString("[");
+    serial.writeUnsigned(STEPPER_MOTOR_COUNT);
+    serial.writeString("] A0: external power supply detector input");
+    serial.writeLine("");
 }
 
 static bool
@@ -122,10 +128,82 @@ commandEquals(const char* command, const char* expected)
     return *command == '\0' && *expected == '\0';
 }
 
+static bool
+commandStartsWith(const char* command, const char* prefix, const char*& remainder)
+{
+    while (*prefix != '\0') {
+        if (*command != *prefix) {
+            return false;
+        }
+        ++command;
+        ++prefix;
+    }
+    remainder = command;
+    return true;
+}
+
+static bool
+parseUnsignedId(const char* text, uint16_t& value)
+{
+    if (*text < '0' || *text > '9') {
+        return false;
+    }
+
+    uint16_t result = 0U;
+    while (*text >= '0' && *text <= '9') {
+        result = static_cast<uint16_t>(
+            result * 10U + static_cast<uint16_t>(*text - '0'));
+        ++text;
+    }
+    value = result;
+    return true;
+}
+
+// Every hardware element (stepper motors, then the power supply detector)
+// gets a stable numeric id, assigned in the same order printed by
+// printHardwareConfiguration: motors are 0..STEPPER_MOTOR_COUNT-1, and the
+// power supply detector is STEPPER_MOTOR_COUNT.
+static void
+printElementStatus(
+    UartSerial& serial,
+    uint16_t id,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    const StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT])
+{
+    if (id < STEPPER_MOTOR_COUNT) {
+        const StepperMotorController& controller = stepperMotorControllers[id];
+        serial.writeString("MOTOR,");
+        serial.writeString(controller.directionForward() ? "F" : "R");
+        serial.writeString(",");
+        serial.writeUnsigned(controller.speedMilliStepsPerSecond());
+        serial.writeString(",");
+        serial.writeSigned(controller.position());
+        serial.writeLine("");
+        return;
+    }
+
+    if (id == STEPPER_MOTOR_COUNT) {
+        serial.writeString("PSU,");
+        serial.writeString(
+            externalPowerSupplyDetector.isExternalPowerSupplyAvailable() ?
+                "ON" :
+                "OFF");
+        serial.writeString(",");
+        serial.writeUnsigned(
+            externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+        serial.writeLine("");
+        return;
+    }
+
+    serial.writeLine("Unknown element id.");
+}
+
 static void
 handleCommand(
     UartSerial& serial,
     const char* command,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    const StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     bool& consoleEnabled,
     bool& singleTelemetryRequested,
     bool& testMovement)
@@ -146,6 +224,19 @@ handleCommand(
 
     if (commandEquals(command, "hardware")) {
         printHardwareConfiguration(serial);
+        return;
+    }
+
+    const char* idText = nullptr;
+    if (commandStartsWith(command, "get ", idText)) {
+        uint16_t id = 0U;
+        if (parseUnsignedId(idText, id)) {
+            printElementStatus(
+                serial, id, externalPowerSupplyDetector, stepperMotorControllers);
+        }
+        else {
+            serial.writeLine("Usage: get <id>");
+        }
         return;
     }
 
@@ -180,6 +271,8 @@ handleCommand(
 static void
 pollCommandInput(
     UartSerial& serial,
+    ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    const StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     char commandBuffer[COMMAND_BUFFER_SIZE],
     uint8_t& commandLength,
     bool& consoleEnabled,
@@ -194,6 +287,8 @@ pollCommandInput(
             handleCommand(
                 serial,
                 commandBuffer,
+                externalPowerSupplyDetector,
+                stepperMotorControllers,
                 consoleEnabled,
                 singleTelemetryRequested,
                 testMovement);
@@ -424,6 +519,8 @@ mainLoopBody(
     const uint32_t now = systemClock.millis();
     pollCommandInput(
         serial,
+        externalPowerSupplyDetector,
+        stepperMotorControllers,
         commandBuffer,
         commandLength,
         consoleEnabled,
