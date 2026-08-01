@@ -11,6 +11,8 @@ class AvrUartSerial : public UartSerial {
     bool isReadAvailable() const override;
     char readChar() override;
     void writeChar(char value) override;
+
+    static void onReceiveComplete();
 };
 
 #endif

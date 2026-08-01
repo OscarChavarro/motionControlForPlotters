@@ -250,18 +250,29 @@ bool SteperMotorElement::handleControlKey(int key, std::string &out_command) {
     return true;
   }
 
+  const bool moveByStepsButtonFocused =
+      selected_widget_index_ == MOVE_BY_STEPS_BUTTON_WIDGET &&
+      moveByStepsVisible();
+
   if (key == ' ') {
     if (selected_widget_index_ == TEST_BUTTON_WIDGET) {
       test_enabled_ = !test_enabled_;
       out_command = "test " + std::to_string(id()) +
           (test_enabled_ ? " enable" : " disable");
     }
-    else if (selected_widget_index_ == MOVE_BY_STEPS_BUTTON_WIDGET &&
-        moveByStepsVisible()) {
+    else if (moveByStepsButtonFocused) {
       out_command = "steps " + std::to_string(id()) + " " +
           std::to_string(parsedStepsValue()) + " " +
           std::to_string(parsedSpeedValue());
     }
+    return true;
+  }
+
+  if ((key == KEY_BACKSPACE || key == 127 || key == '\b') &&
+      moveByStepsButtonFocused) {
+    out_command = "steps " + std::to_string(id()) + " " +
+        std::to_string(-parsedStepsValue()) + " " +
+        std::to_string(parsedSpeedValue());
     return true;
   }
 
