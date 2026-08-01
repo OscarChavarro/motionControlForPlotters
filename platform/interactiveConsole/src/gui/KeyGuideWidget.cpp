@@ -2,7 +2,8 @@
 
 #include <ncurses.h>
 
-void KeyGuideWidget::draw(int row, OperationModes current_mode) const {
+void KeyGuideWidget::draw(
+    int row, OperationModes current_mode, bool element_focused) const {
   attron(A_REVERSE);
   mvhline(row, 0, ' ', COLS);
   mvprintw(row, 2, "<esc> exit");
@@ -18,6 +19,9 @@ void KeyGuideWidget::draw(int row, OperationModes current_mode) const {
       current_mode == ELEMENTS_MODE ? "*" : " ");
   if (current_mode == ELEMENTS_MODE) {
     mvprintw(row, 49, "<tab> Next Element");
+  }
+  if (current_mode == ELEMENTS_MODE && element_focused) {
+    mvprintw(row, 69, "<left/right> Widget  <space> Click");
   }
   attroff(A_REVERSE);
 }

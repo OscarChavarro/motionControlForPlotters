@@ -74,11 +74,17 @@ AvrStepDirectionDriver::pulseStep()
 }
 
 void
-AvrStepDirectionDriver::delayMicroseconds(uint16_t microseconds)
+AvrStepDirectionDriver::delayMicroseconds(uint32_t microseconds)
 {
-    for (uint16_t i = 0; i < microseconds; ++i) {
+    for (uint32_t i = 0UL; i < microseconds; ++i) {
         _delay_us(1);
     }
+}
+
+void
+AvrStepDirectionDriver::waitMicroseconds(uint32_t microseconds)
+{
+    delayMicroseconds(microseconds);
 }
 
 void

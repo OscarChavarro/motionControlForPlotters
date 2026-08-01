@@ -12,7 +12,8 @@ void drawElementBox(
     int height,
     const std::string &title,
     const std::vector<std::string> &lines,
-    bool selected) {
+    bool selected,
+    const std::vector<std::vector<ElementBoxWidget>> &widget_rows) {
   if (width < 3 || height < 3) {
     return;
   }
@@ -56,4 +57,28 @@ void drawElementBox(
     ++row;
   }
   attroff(COLOR_PAIR(UNSELECTED_ELEMENT_PAIR) | A_DIM);
+
+  for (const std::vector<ElementBoxWidget> &widget_row : widget_rows) {
+    if (row >= bottom_row) {
+      break;
+    }
+    int column = left_col + 1;
+    const int row_right_edge = left_col + 1 + text_width;
+    for (const ElementBoxWidget &widget : widget_row) {
+      if (column >= row_right_edge) {
+        break;
+      }
+      const std::string display_text = widget.is_widget ?
+          ("[ " + widget.text + " ]") : widget.text;
+      const bool highlighted = widget.is_widget && selected && widget.focused;
+      const int widget_pair =
+          highlighted ? SELECTED_ELEMENT_PAIR : UNSELECTED_ELEMENT_PAIR;
+      const int widget_attr = highlighted ? (A_REVERSE | A_BOLD) : A_DIM;
+      attron(COLOR_PAIR(widget_pair) | widget_attr);
+      mvaddnstr(row, column, display_text.c_str(), row_right_edge - column);
+      attroff(COLOR_PAIR(widget_pair) | widget_attr);
+      column += static_cast<int>(display_text.size()) + 1;
+    }
+    ++row;
+  }
 }

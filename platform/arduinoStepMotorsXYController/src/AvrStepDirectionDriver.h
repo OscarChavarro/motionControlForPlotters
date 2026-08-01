@@ -10,7 +10,7 @@ class AvrStepDirectionDriver : public StepperMotorDriver {
     static volatile uint8_t* outputRegisterForPin(uint8_t pin);
     static volatile uint8_t* directionRegisterForPin(uint8_t pin);
     static uint8_t bitMaskForPin(uint8_t pin);
-    static void delayMicroseconds(uint16_t microseconds);
+    static void delayMicroseconds(uint32_t microseconds);
     static void writePin(
         volatile uint8_t* outputRegister,
         uint8_t bitMask,
@@ -37,6 +37,7 @@ class AvrStepDirectionDriver : public StepperMotorDriver {
     bool initialize() override;
     void setDirection(bool forward) override;
     void pulseStep() override;
+    void waitMicroseconds(uint32_t microseconds) override;
 };
 
 #endif

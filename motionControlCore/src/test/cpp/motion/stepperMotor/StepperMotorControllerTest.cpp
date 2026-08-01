@@ -38,6 +38,11 @@ class FakeStepperMotorDriver : public StepperMotorDriver {
         }
     }
 
+    void waitMicroseconds(uint32_t microseconds) override
+    {
+        static_cast<void>(microseconds);
+    }
+
     uint32_t forwardPulses() const
     {
         return m_forwardPulses;
@@ -120,6 +125,15 @@ main()
         secondDriver.backwardPulses() != 0UL ||
         firstController.position() != 0L) {
         return 4;
+    }
+
+    secondController.moveBlockingSteps(250L, 500UL);
+    secondController.moveBlockingSteps(-400L, 500UL);
+
+    if (secondController.position() != 3050L ||
+        secondDriver.forwardPulses() != 3450UL ||
+        secondDriver.backwardPulses() != 400UL) {
+        return 5;
     }
 
     return 0;

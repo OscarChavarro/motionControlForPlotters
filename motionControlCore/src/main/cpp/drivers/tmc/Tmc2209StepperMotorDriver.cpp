@@ -28,6 +28,12 @@ Tmc2209StepperMotorDriver::pulseStep()
 }
 
 void
+Tmc2209StepperMotorDriver::waitMicroseconds(uint32_t microseconds)
+{
+    m_stepDirectionDriver->waitMicroseconds(microseconds);
+}
+
+void
 Tmc2209StepperMotorDriver::configureUart(uint32_t baudRate)
 {
     m_uartDriver.initialize(baudRate);

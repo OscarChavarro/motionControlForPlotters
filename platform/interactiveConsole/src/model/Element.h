@@ -30,11 +30,15 @@ class Element {
     static_cast<void>(line);
   }
 
-  // Consumes a keypress meant to control this element while selected.
-  // Returns true if the key was consumed. Read-only elements never
-  // consume anything (default no-op).
-  virtual bool handleControlKey(int key) {
+  // Consumes a keypress meant to control this element while selected
+  // (LEFT/RIGHT move focus between the element's own widgets, space
+  // activates the focused widget). Returns true if the key was consumed.
+  // When activating a widget produces a firmware command, it is written
+  // to out_command so the caller can send it over the serial link.
+  // Read-only elements never consume anything (default no-op).
+  virtual bool handleControlKey(int key, std::string &out_command) {
     static_cast<void>(key);
+    static_cast<void>(out_command);
     return false;
   }
 

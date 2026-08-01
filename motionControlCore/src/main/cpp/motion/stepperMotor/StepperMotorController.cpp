@@ -113,6 +113,28 @@ StepperMotorController::update(uint32_t nowMilliseconds, bool enabled)
         profileMilliStepsPerSecond(currentCycleElapsedMilliseconds);
 }
 
+void
+StepperMotorController::moveBlockingSteps(int32_t steps, uint32_t stepsPerSecond)
+{
+    if (m_driver == nullptr || steps == 0L || stepsPerSecond == 0UL) {
+        return;
+    }
+
+    setDirection(steps > 0L);
+
+    const uint32_t stepCount = steps > 0L ?
+        static_cast<uint32_t>(steps) :
+        static_cast<uint32_t>(-steps);
+    const uint32_t stepPeriodMicroseconds = 1000000UL / stepsPerSecond;
+
+    for (uint32_t i = 0UL; i < stepCount; ++i) {
+        emitStep();
+        if (i + 1UL < stepCount) {
+            m_driver->waitMicroseconds(stepPeriodMicroseconds);
+        }
+    }
+}
+
 int32_t
 StepperMotorController::position() const
 {

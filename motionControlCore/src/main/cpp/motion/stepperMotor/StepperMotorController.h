@@ -39,6 +39,15 @@ class StepperMotorController {
         uint16_t decelerationMilliseconds);
     void update(uint32_t nowMilliseconds, bool enabled);
 
+    // Immediately emits abs(steps) pulses (forward if steps > 0, backward
+    // if steps < 0) at the given rate, blocking until done. Bypasses the
+    // trapezoid profile; callers must keep the repeating test movement
+    // disabled while using this, since it does not run through update().
+    // stepsPerSecond must be > 0; pacing is done with
+    // StepperMotorDriver::waitMicroseconds() between pulses, since this
+    // is a one-shot blocking move rather than a scheduled profile.
+    void moveBlockingSteps(int32_t steps, uint32_t stepsPerSecond);
+
     int32_t position() const;
     uint32_t speedMilliStepsPerSecond() const;
     bool directionForward() const;

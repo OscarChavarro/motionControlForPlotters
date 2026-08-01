@@ -49,6 +49,12 @@ class FakeStepDirectionDriver : public StepperMotorDriver {
         }
     }
 
+    void
+    waitMicroseconds(uint32_t microseconds) override
+    {
+        static_cast<void>(microseconds);
+    }
+
     bool
     initializeCalled() const
     {

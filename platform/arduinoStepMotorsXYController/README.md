@@ -246,5 +246,46 @@ The firmware also emits diagnostic telemetry every 500 ms:
 VMOTOR: <filtered-voltage>V PSU: <OK|OFF> Motor <n> Dir: <F|R> Position: [rotation <n>, ]<angle> degrees Speed: <rotations-per-second> rps <degrees-per-second> deg/s
 ```
 
-The current motion-profile diagnostic firmware does not accept serial
-commands. UART is reserved for boot, power-supply, and motion telemetry.
+The firmware also accepts serial commands over the same UART, listed by
+sending `help`:
+
+```text
+  . [<id>]  Print telemetry, or one element with an id.
+  help  Show the list of available commands.
+  hardware  List hardware elements by pin, tagged [id].
+  get <id>  Print status of one hardware element.
+  console enable  Enable periodic console output.
+  console disable Disable periodic console output.
+  test <id> enable|disable  Toggle test movement for element <id>.
+  steps <id> <n> <speed>  Move motor <id> by n steps at speed steps/s (blocking; test must be disabled).
+```
+
+Every hardware element (each stepper motor, then the power supply detector)
+gets a stable numeric id, assigned in the order printed by `hardware`. The
+`test` command starts/stops the repeating back-and-forth trapezoid
+independently for each motor id, so several motors can be exercised on their
+own. `get <id>` and `. <id>` report one element's status as CSV
+(`MOTOR,<F|R>,<speed>,<position>,<testEnabled>` or `PSU,<ON|OFF>,<voltage>`);
+`.` with no id prints the full human-readable telemetry line instead.
+
+`steps <id> <n> <speed>` moves motor `<id>` by exactly `n` microsteps
+(positive forward, negative backward, `n != 0`) paced at `speed` microsteps
+per second (`speed > 0`), pulsing the driver directly instead of running the
+trapezoid profile. Pacing is done with a busy-wait delay
+(`StepperMotorDriver::waitMicroseconds`, backed by `avr-libc`'s `_delay_us`)
+between pulses rather than the interrupt-driven `SystemClock`: `SystemClock`
+only resolves `millis()`, which is far too coarse to space out steps a few
+hundred microseconds apart, while `_delay_us` is a cycle-counted loop
+calibrated against the compile-time `F_CPU`, so it gives accurate real
+microsecond delays as long as `F_CPU` matches the board (which the board
+presets already guarantee). This is safe here specifically because the
+command is meant to block: there is no background work this firmware needs
+to keep running (steps, PSU sampling, telemetry) while a manual jog is in
+progress.
+
+The command is blocking end-to-end: the firmware does not read or process
+any other command until all `n` steps have been emitted, so it is not
+interruptible. It only runs when that motor's `test` is disabled (motor in
+SUSTAIN, not running the automatic back-and-forth movement), the motor's
+pins are valid, and the external power supply is available; otherwise it
+prints an error and does nothing.

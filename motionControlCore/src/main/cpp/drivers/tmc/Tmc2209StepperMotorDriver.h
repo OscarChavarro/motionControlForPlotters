@@ -39,6 +39,7 @@ class Tmc2209StepperMotorDriver : public StepperMotorDriver {
     bool initialize() override;
     void setDirection(bool forward) override;
     void pulseStep() override;
+    void waitMicroseconds(uint32_t microseconds) override;
 
     void configureUart(uint32_t baudRate);
     void writeGlobalConfig(const Tmc2209GlobalConfig& config);

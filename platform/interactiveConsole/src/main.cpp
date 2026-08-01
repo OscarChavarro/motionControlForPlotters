@@ -216,7 +216,14 @@ static int runConsole(const char *port, int baud_rate) {
         }
       }
     } else if (!elements.empty()) {
-      elements[focused_element_index]->handleControlKey(key);
+      std::string command_to_send;
+      if (elements[focused_element_index]->handleControlKey(
+              key, command_to_send) &&
+          !command_to_send.empty()) {
+        if (connected && !serial.writeText(command_to_send + "\n")) {
+          console.appendSerialText("[serial write error]\n");
+        }
+      }
     }
 
     if (collecting_hardware_report &&
@@ -232,7 +239,10 @@ static int runConsole(const char *port, int baud_rate) {
           elements_top_row, elements_height, elements, highlighted_index);
     }
     console.draw(console_top_row, console_height, status);
-    key_guide.draw(console_top_row + console_height, mode);
+    key_guide.draw(
+        console_top_row + console_height,
+        mode,
+        !console_focused && !elements.empty());
     command_input.draw(
         console_top_row + console_height + KEY_GUIDE_HEIGHT, console_focused);
     refresh();

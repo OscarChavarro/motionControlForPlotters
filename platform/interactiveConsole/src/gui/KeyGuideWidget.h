@@ -6,5 +6,5 @@
 // shortcuts and which operation mode is active.
 class KeyGuideWidget {
  public:
-  void draw(int row, OperationModes current_mode) const;
+  void draw(int row, OperationModes current_mode, bool element_focused) const;
 };
