@@ -9,9 +9,8 @@ static const long STEPS_INPUT_MAX_VALUE = 10000L;
 static const long STEPS_INPUT_MIN_VALUE = -10000L;
 static const size_t STEPS_INPUT_MAX_LENGTH = 6U;  // "-10000"
 
-static const long SPEED_INPUT_MAX_VALUE = 20000L;
 static const long SPEED_INPUT_MIN_VALUE = 1L;
-static const size_t SPEED_INPUT_MAX_LENGTH = 5U;  // "20000"
+static const size_t SPEED_INPUT_MAX_LENGTH = 9U;  // "999999999"
 
 static long
 clampStepsValue(long value) {
@@ -29,9 +28,6 @@ clampStepsValue(long value) {
 
 static long
 clampSpeedValue(long value) {
-  if (value > SPEED_INPUT_MAX_VALUE) {
-    return SPEED_INPUT_MAX_VALUE;
-  }
   if (value < SPEED_INPUT_MIN_VALUE) {
     return SPEED_INPUT_MIN_VALUE;
   }

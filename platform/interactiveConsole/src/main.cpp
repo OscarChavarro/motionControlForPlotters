@@ -2,6 +2,7 @@
 #include "model/Element.h"
 #include "model/HardwareReportParser.h"
 #include "model/OperationModes.h"
+#include "model/PowerSupplyUnitElement.h"
 #include "gui/ConsoleWidget.h"
 #include "gui/ElementsWidget.h"
 #include "gui/InteractiveCommandsInputWidget.h"
@@ -22,6 +23,7 @@
 static volatile sig_atomic_t keep_running = 1;
 static const std::chrono::seconds RECONNECT_INTERVAL(2);
 static const std::chrono::milliseconds HARDWARE_REPORT_TIMEOUT(800);
+static const std::chrono::seconds PSU_POLL_INTERVAL(10);
 static const int KEY_GUIDE_HEIGHT = 1;
 static const int INPUT_HEIGHT = 1;
 static const int ELEMENTS_MODE_CONSOLE_HEIGHT = 5;
@@ -49,6 +51,56 @@ static void appendRawLines(
     if (character >= 32 || character == '\t') {
       partial_line += character;
     }
+  }
+}
+
+// Parses an async "EVENT PSU=READY|LOST VMotor=<v>V" line, emitted by the
+// firmware when the debounced power supply state flips. Returns false if
+// the line does not match.
+static bool parseEventPsuLine(
+    const std::string &line, bool &out_available, int &out_millivolts) {
+  static const std::string PREFIX = "EVENT PSU=";
+  if (line.compare(0, PREFIX.size(), PREFIX) != 0) {
+    return false;
+  }
+  const size_t space_pos = line.find(' ', PREFIX.size());
+  if (space_pos == std::string::npos) {
+    return false;
+  }
+  const std::string state = line.substr(PREFIX.size(), space_pos - PREFIX.size());
+  static const std::string VOLTAGE_PREFIX = "VMotor=";
+  const size_t voltage_pos = line.find(VOLTAGE_PREFIX, space_pos);
+  if (voltage_pos == std::string::npos) {
+    return false;
+  }
+  const double volts = atof(line.c_str() + voltage_pos + VOLTAGE_PREFIX.size());
+  out_available = (state == "READY");
+  out_millivolts = static_cast<int>(volts * 1000.0 + 0.5);
+  return true;
+}
+
+// Routes one completed serial line to every element's applyStatusLine, so a
+// "PSU,ON|OFF,<mV>" reply to ". <id>"/"get <id>" (or the equivalent state
+// carried by an async "EVENT PSU=..." line) updates the matching widget.
+// Elements ignore CSV lines that do not name their own type, so this is
+// safe to call for arbitrary serial output.
+static void routeIncomingStatusLine(
+    const std::string &line, std::vector<std::unique_ptr<Element>> &elements) {
+  bool event_available = false;
+  int event_millivolts = 0;
+  std::string status_line = line;
+  if (parseEventPsuLine(line, event_available, event_millivolts)) {
+    char buffer[32];
+    snprintf(
+        buffer,
+        sizeof(buffer),
+        "PSU,%s,%d",
+        event_available ? "ON" : "OFF",
+        event_millivolts);
+    status_line = buffer;
+  }
+  for (auto &element : elements) {
+    element->applyStatusLine(status_line);
   }
 }
 
@@ -96,6 +148,20 @@ static int runConsole(const char *port, int baud_rate) {
   std::vector<std::string> hardware_report_lines;
   std::string hardware_report_partial_line;
   std::chrono::steady_clock::time_point hardware_report_deadline;
+  std::string status_line_partial;
+  std::chrono::steady_clock::time_point next_psu_poll =
+      std::chrono::steady_clock::now();
+
+  auto pollPsuStatus = [&]() {
+    if (!connected) {
+      return;
+    }
+    for (auto &element : elements) {
+      if (dynamic_cast<PowerSupplyUnitElement *>(element.get()) != nullptr) {
+        serial.writeText(". " + std::to_string(element->id()) + "\n");
+      }
+    }
+  };
 
   auto requestHardwareReport = [&]() {
     if (!connected) {
@@ -140,6 +206,11 @@ static int runConsole(const char *port, int baud_rate) {
             finishHardwareReport();
           }
         }
+        std::vector<std::string> status_lines;
+        appendRawLines(status_line_partial, status_lines, serial_text);
+        for (const std::string &status_line : status_lines) {
+          routeIncomingStatusLine(status_line, elements);
+        }
       }
     } else if (std::chrono::steady_clock::now() >= next_reconnect_attempt) {
       if (!serial.open(port, baud_rate)) {
@@ -148,6 +219,12 @@ static int runConsole(const char *port, int baud_rate) {
       } else {
         connected = true;
       }
+    }
+
+    if (connected && mode == ELEMENTS_MODE &&
+        std::chrono::steady_clock::now() >= next_psu_poll) {
+      pollPsuStatus();
+      next_psu_poll = std::chrono::steady_clock::now() + PSU_POLL_INTERVAL;
     }
 
     const int available_height =
@@ -182,6 +259,7 @@ static int runConsole(const char *port, int baud_rate) {
       console_focused = true;
       clear();
       requestHardwareReport();
+      next_psu_poll = std::chrono::steady_clock::now();
     } else if (mode == ELEMENTS_MODE && key == static_cast<int>('\t')) {
       if (console_focused) {
         if (!elements.empty()) {

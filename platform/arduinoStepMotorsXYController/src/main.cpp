@@ -562,15 +562,18 @@ updateExternalPowerSupplyStatus(
     UartSerial& serial,
     ExternalPowerSupplyDetector& externalPowerSupplyDetector,
     uint32_t now,
-    bool previousExternalPowerSupplyAvailable,
-    bool consoleEnabled)
+    bool previousExternalPowerSupplyAvailable)
 {
     const bool newPowerSupplySample = externalPowerSupplyDetector.update(now);
     const bool externalPowerSupplyAvailable =
         externalPowerSupplyDetector.isExternalPowerSupplyAvailable();
 
-    if (consoleEnabled &&
-        newPowerSupplySample &&
+    // Unlike periodic telemetry, this is a low-frequency state-change
+    // event, so it is always reported regardless of "console enable" -
+    // clients that only poll individual elements still need to learn
+    // about a PSU disconnect without opting into the 500ms telemetry
+    // stream.
+    if (newPowerSupplySample &&
         externalPowerSupplyAvailable != previousExternalPowerSupplyAvailable) {
         serial.writeString("EVENT PSU=");
         serial.writeString(externalPowerSupplyAvailable ? "READY" : "LOST");
@@ -668,8 +671,7 @@ mainLoopBody(
             serial,
             externalPowerSupplyDetector,
             now,
-            previousExternalPowerSupplyAvailable,
-            consoleEnabled);
+            previousExternalPowerSupplyAvailable);
     previousExternalPowerSupplyAvailable = externalPowerSupplyAvailable;
 
     updateStepperMotorControllers(
