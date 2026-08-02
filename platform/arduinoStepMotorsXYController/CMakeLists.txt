@@ -2,46 +2,19 @@ cmake_minimum_required(VERSION 3.22)
 
 project(arduinoStepMotorsXYController LANGUAGES C CXX)
 
-if(NOT DEFINED MOTION_CONTROL_REPO_ROOT)
-  get_filename_component(MOTION_CONTROL_REPO_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+if(NOT DEFINED MOTION_CONTROL_REPO_ROOT OR NOT DEFINED ARDUINO_BOARD)
+  message(FATAL_ERROR
+    "This target must be configured as part of the repository root project "
+    "(e.g. 'cmake --preset avr-mega2560-debug' from the repo root), which is "
+    "the single source of truth for ARDUINO_BOARD and all "
+    "STEPPER_MOTOR_*/EXTERNAL_VOLTAGE_PSU_* variables. Configuring this "
+    "directory standalone is not supported.")
 endif()
 
 include(${MOTION_CONTROL_REPO_ROOT}/motionControlCore/motionControlCoreSources.cmake)
 
-set(ARDUINO_BOARD "mega2560" CACHE STRING "Arduino board preset: uno, nano, mega2560")
 set(ARDUINO_MCU "" CACHE STRING "Override AVR MCU, for example atmega328p")
 set(ARDUINO_F_CPU "" CACHE STRING "Override CPU clock, for example 16000000UL")
-set(ARDUINO_PROGRAMMER "" CACHE STRING "Override avrdude programmer")
-set(ARDUINO_PORT "/dev/ttyACM0" CACHE STRING "Upload/monitor serial port")
-set(ARDUINO_UPLOAD_BAUD "" CACHE STRING "Override avrdude baud rate")
-set(ARDUINO_MONITOR_BAUD "" CACHE STRING "Override monitor serial baud rate")
-set(EXTERNAL_VOLTAGE_PSU "24" CACHE STRING
-  "Expected external power supply voltage in volts")
-set(EXTERNAL_VOLTAGE_PSU_TOLERANCE "1.5" CACHE STRING
-  "Allowed external power supply voltage tolerance in volts")
-set(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS "220000" CACHE STRING
-  "Legacy variable name; voltage divider resistor in ohms between VMOT and A0")
-set(EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS "47000" CACHE STRING
-  "Voltage divider resistor in ohms between A0 and GND")
-set(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL "5000" CACHE STRING
-  "Interval in milliseconds for missing PSU error messages")
-set(STEPPER_MOTOR_STEP_PIN "3" CACHE STRING
-  "Arduino digital pin connected to the A4988 STEP input")
-set(STEPPER_MOTOR_DIRECTION_PIN "2" CACHE STRING
-  "Arduino digital pin connected to the A4988 DIR input")
-set(STEPPER_MOTOR_STEP_PULSE_MICROSECONDS "5" CACHE STRING
-  "A4988 STEP high and low pulse width in microseconds")
-set(STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS "5" CACHE STRING
-  "Delay between changing DIR and emitting the STEP rising edge")
-set(STEPPER_MOTOR_TRAVEL_ROTATIONS "2" CACHE STRING
-  "Rotations traveled by each forward or backward movement segment")
-set(STEPPER_MOTOR_ACCELERATION_MILLISECONDS "1000" CACHE STRING
-  "Acceleration time for the example trapezoid profile")
-set(STEPPER_MOTOR_CRUISE_MILLISECONDS "8000" CACHE STRING
-  "Cruise time for the example trapezoid profile")
-set(STEPPER_MOTOR_DECELERATION_MILLISECONDS "1000" CACHE STRING
-  "Deceleration time for the example trapezoid profile")
 
 if(STEPPER_MOTOR_STEP_PIN STREQUAL "0" OR
     STEPPER_MOTOR_STEP_PIN STREQUAL "1" OR

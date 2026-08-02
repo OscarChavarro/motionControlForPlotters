@@ -42,9 +42,9 @@ set(EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS "47000" CACHE STRING
   "Voltage divider resistor in ohms between A0 and GND")
 set(PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL "5000" CACHE STRING
   "Interval in milliseconds for missing PSU error messages")
-set(STEPPER_MOTOR_STEP_PIN "3" CACHE STRING
+set(STEPPER_MOTOR_STEP_PIN "2" CACHE STRING
   "Arduino digital pin connected to the A4988 STEP input")
-set(STEPPER_MOTOR_DIRECTION_PIN "2" CACHE STRING
+set(STEPPER_MOTOR_DIRECTION_PIN "5" CACHE STRING
   "Arduino digital pin connected to the A4988 DIR input")
 set(STEPPER_MOTOR_STEP_PULSE_MICROSECONDS "5" CACHE STRING
   "A4988 STEP high and low pulse width in microseconds")

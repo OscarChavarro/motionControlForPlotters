@@ -1,6 +1,13 @@
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR avr)
 
+if(APPLE)
+  # Prevent macOS host SDK/arch flags from leaking into this AVR cross build.
+  set(CMAKE_OSX_ARCHITECTURES "" CACHE STRING "" FORCE)
+  set(CMAKE_OSX_SYSROOT "" CACHE STRING "" FORCE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "" CACHE STRING "" FORCE)
+endif()
+
 find_program(AVR_GCC avr-gcc REQUIRED)
 find_program(AVR_GXX avr-g++ REQUIRED)
 find_program(AVR_GCC_AR avr-gcc-ar)
