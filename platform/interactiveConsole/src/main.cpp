@@ -3,6 +3,7 @@
 #include "model/HardwareReportParser.h"
 #include "model/OperationModes.h"
 #include "model/PowerSupplyUnitElement.h"
+#include "model/SteperMotorElement.h"
 #include "gui/ConsoleWidget.h"
 #include "gui/ElementsWidget.h"
 #include "gui/InteractiveCommandsInputWidget.h"
@@ -101,6 +102,27 @@ static void routeIncomingStatusLine(
   }
   for (auto &element : elements) {
     element->applyStatusLine(status_line);
+  }
+}
+
+// Motors have no direct visibility into the PSU element's state, so after
+// any update this pushes the combined "PSU present AND motorDriverEnabled
+// flag" state from the PSU element into every motor element, which then
+// hides its own test/move-by-steps widgets while disabled.
+static void syncMotorDriverEnabledAcrossElements(
+    std::vector<std::unique_ptr<Element>> &elements) {
+  bool motors_actually_enabled = true;
+  for (const auto &element : elements) {
+    const auto *psu = dynamic_cast<const PowerSupplyUnitElement *>(element.get());
+    if (psu != nullptr) {
+      motors_actually_enabled = psu->motorsActuallyEnabled();
+    }
+  }
+  for (auto &element : elements) {
+    auto *motor = dynamic_cast<SteperMotorElement *>(element.get());
+    if (motor != nullptr) {
+      motor->setMotorDriverEnabled(motors_actually_enabled);
+    }
   }
 }
 
@@ -210,6 +232,9 @@ static int runConsole(const char *port, int baud_rate) {
         appendRawLines(status_line_partial, status_lines, serial_text);
         for (const std::string &status_line : status_lines) {
           routeIncomingStatusLine(status_line, elements);
+        }
+        if (!status_lines.empty()) {
+          syncMotorDriverEnabledAcrossElements(elements);
         }
       }
     } else if (std::chrono::steady_clock::now() >= next_reconnect_attempt) {

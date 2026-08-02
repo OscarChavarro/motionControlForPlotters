@@ -16,7 +16,7 @@ bool NcursesSteperMotorElementRenderer::draw(
     return false;
   }
 
-  const std::vector<std::string> lines = {
+  std::vector<std::string> lines = {
       motor->referenceName(),
       "Driver: " + motor->driverDescription(),
       std::string("Dir: ") + (motor->directionForward() ? "F" : "R"),
@@ -24,21 +24,25 @@ bool NcursesSteperMotorElementRenderer::draw(
       "Pos: " + std::to_string(motor->positionSteps()) + " steps",
   };
 
-  std::vector<std::vector<ElementBoxWidget>> widget_rows = {
-      {{motor->testButtonLabel(), motor->selectedWidgetIndex() == 0}},
-  };
-  if (motor->moveByStepsVisible()) {
-    widget_rows.push_back({
-        {"Steps:", false, false},
-        {motor->stepsInputText(), motor->selectedWidgetIndex() == 1},
-    });
-    widget_rows.push_back({
-        {"Speed steps/sec", false, false},
-        {motor->speedInputText(), motor->selectedWidgetIndex() == 2},
-    });
-    widget_rows.push_back({
-        {"MOVE BY STEPS", motor->selectedWidgetIndex() == 3},
-    });
+  std::vector<std::vector<ElementBoxWidget>> widget_rows;
+  if (!motor->motorDriverEnabled()) {
+    lines.push_back("MOTOR DISABLED (driver off)");
+  } else {
+    widget_rows.push_back(
+        {{motor->testButtonLabel(), motor->selectedWidgetIndex() == 0}});
+    if (motor->moveByStepsVisible()) {
+      widget_rows.push_back({
+          {"Steps:", false, false},
+          {motor->stepsInputText(), motor->selectedWidgetIndex() == 1},
+      });
+      widget_rows.push_back({
+          {"Speed steps/sec", false, false},
+          {motor->speedInputText(), motor->selectedWidgetIndex() == 2},
+      });
+      widget_rows.push_back({
+          {"MOVE BY STEPS", motor->selectedWidgetIndex() == 3},
+      });
+    }
   }
 
   drawElementBox(

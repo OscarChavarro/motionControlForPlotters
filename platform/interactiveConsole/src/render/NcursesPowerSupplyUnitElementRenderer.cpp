@@ -31,6 +31,12 @@ bool NcursesPowerSupplyUnitElementRenderer::draw(
       std::string("Volt: ") + voltage_text,
   };
 
-  drawElementBox(top_row, left_col, width, height, psu->title(), lines, selected);
+  const std::vector<std::vector<ElementBoxWidget>> widget_rows = {
+      {{psu->motorDriverButtonLabel(), true}},
+  };
+
+  drawElementBox(
+      top_row, left_col, width, height, psu->title(), lines, selected,
+      widget_rows);
   return true;
 }

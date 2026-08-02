@@ -2,6 +2,7 @@
 
 #include "CsvLine.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <ncurses.h>
 
@@ -47,6 +48,7 @@ SteperMotorElement::SteperMotorElement(
       speed_milli_steps_per_second_(0),
       position_steps_(0),
       test_enabled_(true),
+      motor_driver_enabled_(true),
       selected_widget_index_(TEST_BUTTON_WIDGET),
       steps_input_text_("1"),
       steps_input_touched_(false),
@@ -86,8 +88,19 @@ std::string SteperMotorElement::testButtonLabel() const {
   return test_enabled_ ? "TEST" : "SUSTAIN";
 }
 
+void SteperMotorElement::setMotorDriverEnabled(bool enabled) {
+  motor_driver_enabled_ = enabled;
+  if (selected_widget_index_ >= widgetCount()) {
+    selected_widget_index_ = std::max(0, widgetCount() - 1);
+  }
+}
+
+bool SteperMotorElement::motorDriverEnabled() const {
+  return motor_driver_enabled_;
+}
+
 bool SteperMotorElement::moveByStepsVisible() const {
-  return !test_enabled_;
+  return motor_driver_enabled_ && !test_enabled_;
 }
 
 const std::string &SteperMotorElement::stepsInputText() const {
@@ -103,6 +116,9 @@ int SteperMotorElement::selectedWidgetIndex() const {
 }
 
 int SteperMotorElement::widgetCount() const {
+  if (!motor_driver_enabled_) {
+    return 0;
+  }
   return moveByStepsVisible() ? 4 : 1;
 }
 
@@ -125,13 +141,17 @@ std::string SteperMotorElement::title() const {
 }
 
 std::vector<std::string> SteperMotorElement::infoLines() const {
-  return {
+  std::vector<std::string> lines = {
       reference_name_,
       "Driver: " + driver_description_,
       std::string("Dir: ") + (direction_forward_ ? "F" : "R"),
       "Speed: " + std::to_string(speed_milli_steps_per_second_) + " mstep/s",
       "Pos: " + std::to_string(position_steps_) + " steps",
   };
+  if (!motor_driver_enabled_) {
+    lines.push_back("MOTOR DISABLED (driver off)");
+  }
+  return lines;
 }
 
 void SteperMotorElement::applyStatusLine(const std::string &line) {
@@ -146,7 +166,7 @@ void SteperMotorElement::applyStatusLine(const std::string &line) {
     test_enabled_ = (fields[4] == "1");
   }
   if (selected_widget_index_ >= widgetCount()) {
-    selected_widget_index_ = widgetCount() - 1;
+    selected_widget_index_ = std::max(0, widgetCount() - 1);
   }
 }
 
@@ -219,6 +239,10 @@ bool SteperMotorElement::handleSpeedInputKey(int key) {
 }
 
 bool SteperMotorElement::handleControlKey(int key, std::string &out_command) {
+  if (!motor_driver_enabled_) {
+    return false;
+  }
+
   const int widget_count = widgetCount();
   if (selected_widget_index_ >= widget_count) {
     selected_widget_index_ = widget_count - 1;

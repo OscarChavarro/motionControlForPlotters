@@ -106,12 +106,20 @@ in Fritzing.
 
 | Pin | UNO | MEGA2560 | Direction | Use |
 |---|---|---|---|---|
-| 2 | D2 / PD2 | D2 / PE4 | Output | A4988 DIR input |
-| 3 | D3 / PD3 | D3 / PE5 | Output | A4988 STEP input |
+| 2 | D2 / PD2 | D2 / PE4 | Output | A4988/TMC2209 STEP input |
+| 5 | D5 / PD5 | D5 / PE3 | Output | A4988/TMC2209 DIR input |
+| 8 | D8 / PB0 | D8 / PH5 | Output | Shared motor driver EN input (active low; CNC Shield X/Y/Z EN) |
 | 13 | D13 / PB5 | D13 / PB7 | Output | Testing LED |
 | A0 | ADC0 / PC0 | ADC0 / PF0 | Analog input | External power supply unit detection via voltage divider from VMOT |
 
-The A4988 driver receives one motor step on each rising edge of `STEP`. The `DIR` signal selects the direction used by the next `STEP` rising edge. The firmware uses `D3` for `STEP` and `D2` for `DIR` by default, leaving `D0` and `D1` free for the USB serial console.
+This pinout matches the X-axis socket of a Protoneer-compatible Arduino CNC
+Shield V3 (`doc/references/electronicsElements/arduino-cnc-shield-protoneer.pdf`):
+STEP=D2, DIR=D5, and the shared EN=D8. The driver receives one motor step on
+each rising edge of `STEP`. The `DIR` signal selects the direction used by the
+next `STEP` rising edge. `EN` is active low and shared by every axis on the
+shield: driving it LOW enables all motor drivers at once, HIGH disables them
+all, regardless of each motor's own STEP/DIR state. `D0` and `D1` stay free
+for the USB serial console.
 
 `AvrStepDirectionDriver` supports D2-D13 on UNO/Nano and D2-D53 on Mega
 2560. The program rejects D0/D1 because this firmware reserves them for UART,
@@ -123,8 +131,9 @@ motors can be driven simultaneously at useful rates.
 The first stepper motor and its controller are configured with:
 
 ```bash
--DSTEPPER_MOTOR_STEP_PIN=3
--DSTEPPER_MOTOR_DIRECTION_PIN=2
+-DSTEPPER_MOTOR_STEP_PIN=2
+-DSTEPPER_MOTOR_DIRECTION_PIN=5
+-DMOTOR_DRIVER_ENABLE_PIN=8
 -DSTEPPER_MOTOR_STEP_PULSE_MICROSECONDS=5
 -DSTEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS=5
 -DSTEPPER_MOTOR_TRAVEL_ROTATIONS=2
@@ -147,12 +156,12 @@ Each table entry may have independent model, pins, pulse timings, travel, and
 trapezoid timings.
 
 The reusable `StepperMotorController` and the `SystemClock`, `UartSerial`,
-`GpioLed`, `ExternalPowerSupplyDetector`, and `StepperMotorDriver` interfaces
-live in `motionControlCore`. Their concrete implementations in this target are
-named `AvrSystemClock`, `AvrUartSerial`, `AvrGpioLed`,
-`AvrExternalPowerSupplyDetector`, and `AvrStepDirectionDriver`. `main.cpp`
-creates these concrete objects during initialization and uses the core
-interface types afterward.
+`GpioLed`, `ExternalPowerSupplyDetector`, `MotorDriverEnable`, and
+`StepperMotorDriver` interfaces live in `motionControlCore`. Their concrete
+implementations in this target are named `AvrSystemClock`, `AvrUartSerial`,
+`AvrGpioLed`, `AvrExternalPowerSupplyDetector`, `AvrMotorDriverEnable`, and
+`AvrStepDirectionDriver`. `main.cpp` creates these concrete objects during
+initialization and uses the core interface types afterward.
 
 The external power supply detector expects a voltage divider from `VMOT` into `A0`. The divider must keep the analog input inside the board's ADC range.
 
@@ -240,6 +249,35 @@ EVENT PSU=READY VMOTOR=<voltage>V
 EVENT PSU=LOST VMOTOR=<voltage>V
 ```
 
+## Motor driver enable (`motorDriverEnabled`)
+
+The PSU element also models a `motorDriverEnabled` flag, backed by
+`MOTOR_DRIVER_ENABLE_PIN` (`D8` by default): the shared, active-low `EN` line
+that every motor driver on the CNC Shield listens to at once.
+
+- The flag defaults to `true`.
+- The pin is only actually driven active (LOW, drivers powered) when **both**
+  the flag is `true` **and** the external power supply is present. With no
+  PSU, the drivers are always disabled regardless of the flag: there is
+  nothing safe to power them from.
+- With a PSU present, the flag lets the user (or the application, e.g. a
+  panic button) turn the drivers off on demand, independent of PSU state.
+- At boot, before the firmware has decided anything, the pin is held HIGH
+  (disabled) as the safe default.
+
+The flag is controlled with:
+
+```text
+motordriver <id> enable|disable
+```
+
+where `<id>` is the PSU element's id (the same id printed by `hardware` and
+used with `get <id>`). `get <id>`/`. <id>` on the PSU element reports the flag
+as an extra CSV field: `PSU,<ON|OFF>,<voltage>,<motorDriverEnabled 0|1>`.
+`test <id> enable` and `steps <id> <n> <speed>` on a motor element both
+report `Error: motor driver disabled.` and do nothing while the combined
+enable state is off.
+
 The firmware also emits diagnostic telemetry every 500 ms:
 
 ```text
@@ -257,6 +295,7 @@ sending `help`:
   console enable  Enable periodic console output.
   console disable Disable periodic console output.
   test <id> enable|disable  Toggle test movement for element <id>.
+  motordriver <id> enable|disable  Toggle the shared motor driver enable line (PSU element <id>).
   steps <id> <n> <speed>  Move motor <id> by n steps at speed steps/s (blocking; test must be disabled).
 ```
 
@@ -265,8 +304,9 @@ gets a stable numeric id, assigned in the order printed by `hardware`. The
 `test` command starts/stops the repeating back-and-forth trapezoid
 independently for each motor id, so several motors can be exercised on their
 own. `get <id>` and `. <id>` report one element's status as CSV
-(`MOTOR,<F|R>,<speed>,<position>,<testEnabled>` or `PSU,<ON|OFF>,<voltage>`);
-`.` with no id prints the full human-readable telemetry line instead.
+(`MOTOR,<F|R>,<speed>,<position>,<testEnabled>` or
+`PSU,<ON|OFF>,<voltage>,<motorDriverEnabled 0|1>`); `.` with no id prints the
+full human-readable telemetry line instead.
 
 `steps <id> <n> <speed>` moves motor `<id>` by exactly `n` microsteps
 (positive forward, negative backward, `n != 0`) paced at `speed` microsteps

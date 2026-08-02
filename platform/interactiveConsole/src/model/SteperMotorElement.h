@@ -25,10 +25,19 @@ class SteperMotorElement : public Element {
   bool testEnabled() const;
   std::string testButtonLabel() const;
 
+  // Reflects the PSU element's motorsActuallyEnabled(): false whenever
+  // there is no PSU, or the user turned the shared motor driver off (e.g.
+  // a panic button). Propagated in from outside since this element has no
+  // direct visibility into the PSU's state.
+  void setMotorDriverEnabled(bool enabled);
+  bool motorDriverEnabled() const;
+
   // The steps/speed inputs and the "MOVE BY STEPS" button only exist
-  // while the motor is in SUSTAIN (test disabled): running the blocking
-  // "steps" firmware command while the repeating test movement is
-  // active would fight over direction and position.
+  // while the motor is in SUSTAIN (test disabled) and the shared motor
+  // driver is enabled: running the blocking "steps" firmware command
+  // while the repeating test movement is active would fight over
+  // direction and position, and neither test nor steps do anything useful
+  // while the driver itself is off.
   bool moveByStepsVisible() const;
   const std::string &stepsInputText() const;
   const std::string &speedInputText() const;
@@ -63,6 +72,7 @@ class SteperMotorElement : public Element {
   long speed_milli_steps_per_second_;
   long position_steps_;
   bool test_enabled_;
+  bool motor_driver_enabled_;
   int selected_widget_index_;
   std::string steps_input_text_;
   bool steps_input_touched_;

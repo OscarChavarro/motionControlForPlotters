@@ -46,6 +46,8 @@ set(STEPPER_MOTOR_STEP_PIN "2" CACHE STRING
   "Arduino digital pin connected to the A4988 STEP input")
 set(STEPPER_MOTOR_DIRECTION_PIN "5" CACHE STRING
   "Arduino digital pin connected to the A4988 DIR input")
+set(MOTOR_DRIVER_ENABLE_PIN "8" CACHE STRING
+  "Arduino digital pin driving the shared stepper driver EN line (active low)")
 set(STEPPER_MOTOR_STEP_PULSE_MICROSECONDS "5" CACHE STRING
   "A4988 STEP high and low pulse width in microseconds")
 set(STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS "5" CACHE STRING

@@ -6,7 +6,10 @@
 #include <cstdlib>
 
 PowerSupplyUnitElement::PowerSupplyUnitElement(int id, bool available)
-    : Element(id), available_(available), voltage_millivolts_(0) {
+    : Element(id),
+      available_(available),
+      voltage_millivolts_(0),
+      motor_driver_enabled_(true) {
 }
 
 bool PowerSupplyUnitElement::isAvailable() const {
@@ -15,6 +18,18 @@ bool PowerSupplyUnitElement::isAvailable() const {
 
 int PowerSupplyUnitElement::voltageMillivolts() const {
   return voltage_millivolts_;
+}
+
+bool PowerSupplyUnitElement::motorDriverEnabled() const {
+  return motor_driver_enabled_;
+}
+
+bool PowerSupplyUnitElement::motorsActuallyEnabled() const {
+  return available_ && motor_driver_enabled_;
+}
+
+std::string PowerSupplyUnitElement::motorDriverButtonLabel() const {
+  return motor_driver_enabled_ ? "DRIVER ON" : "DRIVER OFF";
 }
 
 std::string PowerSupplyUnitElement::title() const {
@@ -33,6 +48,7 @@ std::vector<std::string> PowerSupplyUnitElement::infoLines() const {
   return {
       std::string("State: ") + (available_ ? "ON" : "OFF"),
       std::string("Voltage: ") + voltage_text,
+      std::string("Motor driver: ") + (motor_driver_enabled_ ? "ON" : "OFF"),
   };
 }
 
@@ -43,4 +59,18 @@ void PowerSupplyUnitElement::applyStatusLine(const std::string &line) {
   }
   available_ = (fields[1] == "ON");
   voltage_millivolts_ = atoi(fields[2].c_str());
+  if (fields.size() >= 4) {
+    motor_driver_enabled_ = (fields[3] == "1");
+  }
+}
+
+bool PowerSupplyUnitElement::handleControlKey(
+    int key, std::string &out_command) {
+  if (key == ' ') {
+    motor_driver_enabled_ = !motor_driver_enabled_;
+    out_command = "motordriver " + std::to_string(id()) +
+        (motor_driver_enabled_ ? " enable" : " disable");
+    return true;
+  }
+  return false;
 }

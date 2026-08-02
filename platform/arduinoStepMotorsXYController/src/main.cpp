@@ -1,5 +1,6 @@
 #include "AvrExternalPowerSupplyDetector.h"
 #include "AvrGpioLed.h"
+#include "AvrMotorDriverEnable.h"
 #include "AvrStepDirectionDriver.h"
 #include "AvrSystemClock.h"
 #include "AvrUartSerial.h"
@@ -7,6 +8,7 @@
 
 #include "hal/ExternalPowerSupplyDetector.h"
 #include "hal/GpioLed.h"
+#include "hal/MotorDriverEnable.h"
 #include "hal/SystemClock.h"
 #include "hal/UartSerial.h"
 
@@ -74,6 +76,7 @@ printAvailableCommands(UartSerial& serial)
     serial.writeLine("  console enable  Enable periodic console output.");
     serial.writeLine("  console disable Disable periodic console output.");
     serial.writeLine("  test <id> enable|disable  Toggle test movement for element <id>.");
+    serial.writeLine("  motordriver <id> enable|disable  Toggle the shared motor driver enable line (PSU element <id>).");
     serial.writeLine("  steps <id> <n> <speed>  Move motor <id> by n steps at speed steps/s (blocking; test must be disabled).");
 }
 
@@ -111,7 +114,10 @@ printHardwareConfiguration(UartSerial& serial)
 
     serial.writeString("[");
     serial.writeUnsigned(STEPPER_MOTOR_COUNT);
-    serial.writeString("] A0: external power supply detector input");
+    serial.writeString("] A0, D");
+    serial.writeUnsigned(MOTOR_DRIVER_ENABLE_PIN);
+    serial.writeString(
+        ": external power supply detector input, motor driver enable");
     serial.writeLine("");
 }
 
@@ -197,7 +203,8 @@ printElementStatus(
     uint16_t id,
     ExternalPowerSupplyDetector& externalPowerSupplyDetector,
     const StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
-    const bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT])
+    const bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT],
+    bool motorDriverEnabledRequested)
 {
     if (id < STEPPER_MOTOR_COUNT) {
         const StepperMotorController& controller = stepperMotorControllers[id];
@@ -222,6 +229,8 @@ printElementStatus(
         serial.writeString(",");
         serial.writeUnsigned(
             externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+        serial.writeString(",");
+        serial.writeString(motorDriverEnabledRequested ? "1" : "0");
         serial.writeLine("");
         return;
     }
@@ -237,6 +246,7 @@ handleCommand(
     StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
     bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT],
+    bool& motorDriverEnabledRequested,
     bool& consoleEnabled,
     bool& singleTelemetryRequested,
     uint16_t& singleTelemetryId)
@@ -282,7 +292,8 @@ handleCommand(
                 id,
                 externalPowerSupplyDetector,
                 stepperMotorControllers,
-                stepperMotorTestEnabled);
+                stepperMotorTestEnabled,
+                motorDriverEnabledRequested);
         }
         else {
             serial.writeLine("Usage: get <id>");
@@ -313,6 +324,12 @@ handleCommand(
                 ++stateText;
             }
             if (commandEquals(stateText, "enable")) {
+                if (!motorDriverEnabledRequested ||
+                    !externalPowerSupplyDetector
+                         .isExternalPowerSupplyAvailable()) {
+                    serial.writeLine("Error: motor driver disabled.");
+                    return;
+                }
                 stepperMotorTestEnabled[id] = true;
                 serial.writeString("Test movement enabled for element ");
                 serial.writeUnsigned(id);
@@ -328,6 +345,31 @@ handleCommand(
             }
         }
         serial.writeLine("Usage: test <id> enable|disable");
+        return;
+    }
+
+    if (commandStartsWith(command, "motordriver ", idText)) {
+        uint16_t id = 0U;
+        const char* stateText = idText;
+        if (parseUnsignedId(idText, id) && id == STEPPER_MOTOR_COUNT) {
+            while (*stateText >= '0' && *stateText <= '9') {
+                ++stateText;
+            }
+            if (*stateText == ' ') {
+                ++stateText;
+            }
+            if (commandEquals(stateText, "enable")) {
+                motorDriverEnabledRequested = true;
+                serial.writeLine("Motor driver enabled.");
+                return;
+            }
+            if (commandEquals(stateText, "disable")) {
+                motorDriverEnabledRequested = false;
+                serial.writeLine("Motor driver disabled.");
+                return;
+            }
+        }
+        serial.writeLine("Usage: motordriver <id> enable|disable");
         return;
     }
 
@@ -356,6 +398,9 @@ handleCommand(
                     }
                     else if (!stepperMotorReady[id]) {
                         serial.writeLine("Error: element not ready.");
+                    }
+                    else if (!motorDriverEnabledRequested) {
+                        serial.writeLine("Error: motor driver disabled.");
                     }
                     else if (!externalPowerSupplyDetector
                                   .isExternalPowerSupplyAvailable()) {
@@ -392,6 +437,7 @@ pollCommandInput(
     StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
     bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT],
+    bool& motorDriverEnabledRequested,
     char commandBuffer[COMMAND_BUFFER_SIZE],
     uint8_t& commandLength,
     bool& consoleEnabled,
@@ -410,6 +456,7 @@ pollCommandInput(
                 stepperMotorControllers,
                 stepperMotorReady,
                 stepperMotorTestEnabled,
+                motorDriverEnabledRequested,
                 consoleEnabled,
                 singleTelemetryRequested,
                 singleTelemetryId);
@@ -502,11 +549,13 @@ initializeHardware(
     SystemClock& systemClock,
     ExternalPowerSupplyDetector& externalPowerSupplyDetector,
     GpioLed& statusLed,
+    MotorDriverEnable& motorDriverEnable,
     UartSerial& serial)
 {
     systemClock.initialize();
     externalPowerSupplyDetector.initialize();
     statusLed.initialize();
+    motorDriverEnable.initialize();
     serial.initialize(ARDUINO_SERIAL_BAUD);
     serial.writeString("motionControl boot build=");
     serial.writeLine(MOTION_CONTROL_BUILD_TIMESTAMP);
@@ -592,13 +641,13 @@ updateStepperMotorControllers(
     const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
     const bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT],
     uint32_t now,
-    bool externalPowerSupplyAvailable)
+    bool motorsActuallyEnabled)
 {
     for (uint8_t i = 0U; i < STEPPER_MOTOR_COUNT; ++i) {
         stepperMotorControllers[i].update(
             now,
             stepperMotorTestEnabled[i] &&
-                externalPowerSupplyAvailable && stepperMotorReady[i]);
+                motorsActuallyEnabled && stepperMotorReady[i]);
     }
 }
 
@@ -608,6 +657,7 @@ printTelemetry(
     ExternalPowerSupplyDetector& externalPowerSupplyDetector,
     const StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     const bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT],
+    bool motorDriverEnabledRequested,
     uint16_t requestedId)
 {
     if (requestedId <= STEPPER_MOTOR_COUNT) {
@@ -616,7 +666,8 @@ printTelemetry(
             requestedId,
             externalPowerSupplyDetector,
             stepperMotorControllers,
-            stepperMotorTestEnabled);
+            stepperMotorTestEnabled,
+            motorDriverEnabledRequested);
         return;
     }
 
@@ -643,9 +694,11 @@ mainLoopBody(
     SystemClock& systemClock,
     UartSerial& serial,
     ExternalPowerSupplyDetector& externalPowerSupplyDetector,
+    MotorDriverEnable& motorDriverEnable,
     StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT],
     const bool stepperMotorReady[STEPPER_MOTOR_COUNT],
     bool stepperMotorTestEnabled[STEPPER_MOTOR_COUNT],
+    bool& motorDriverEnabledRequested,
     uint32_t& lastTelemetryPrint,
     bool& previousExternalPowerSupplyAvailable,
     char commandBuffer[COMMAND_BUFFER_SIZE],
@@ -661,6 +714,7 @@ mainLoopBody(
         stepperMotorControllers,
         stepperMotorReady,
         stepperMotorTestEnabled,
+        motorDriverEnabledRequested,
         commandBuffer,
         commandLength,
         consoleEnabled,
@@ -674,12 +728,19 @@ mainLoopBody(
             previousExternalPowerSupplyAvailable);
     previousExternalPowerSupplyAvailable = externalPowerSupplyAvailable;
 
+    // The driver enable line only ever goes active when both the user
+    // wants motors on (the panic-button flag) and a PSU is actually
+    // present: no PSU always means DISABLED, regardless of the flag.
+    const bool motorsActuallyEnabled =
+        motorDriverEnabledRequested && externalPowerSupplyAvailable;
+    motorDriverEnable.setEnabled(motorsActuallyEnabled);
+
     updateStepperMotorControllers(
         stepperMotorControllers,
         stepperMotorReady,
         stepperMotorTestEnabled,
         now,
-        externalPowerSupplyAvailable);
+        motorsActuallyEnabled);
 
     if (singleTelemetryRequested) {
         printTelemetry(
@@ -687,6 +748,7 @@ mainLoopBody(
             externalPowerSupplyDetector,
             stepperMotorControllers,
             stepperMotorTestEnabled,
+            motorDriverEnabledRequested,
             singleTelemetryId);
         singleTelemetryRequested = false;
     }
@@ -697,6 +759,7 @@ mainLoopBody(
             externalPowerSupplyDetector,
             stepperMotorControllers,
             stepperMotorTestEnabled,
+            motorDriverEnabledRequested,
             STEPPER_MOTOR_COUNT + 1U);
     }
 }
@@ -714,6 +777,9 @@ main()
     AvrGpioLed avrStatusLed;
     GpioLed& statusLed = avrStatusLed;
 
+    AvrMotorDriverEnable avrMotorDriverEnable;
+    MotorDriverEnable& motorDriverEnable = avrMotorDriverEnable;
+
     AvrUartSerial avrSerial;
     UartSerial& serial = avrSerial;
     bool consoleEnabled = false;
@@ -722,7 +788,13 @@ main()
         systemClock,
         externalPowerSupplyDetector,
         statusLed,
+        motorDriverEnable,
         serial);
+
+    // Defaults to true: motors run whenever a PSU is present, until the
+    // user (or the app, e.g. a panic button) explicitly disables them via
+    // "motordriver <id> disable".
+    bool motorDriverEnabledRequested = true;
 
     AvrStepDirectionDriver stepperMotorDrivers[STEPPER_MOTOR_COUNT];
     StepperMotorController stepperMotorControllers[STEPPER_MOTOR_COUNT];
@@ -757,9 +829,11 @@ main()
             systemClock,
             serial,
             externalPowerSupplyDetector,
+            motorDriverEnable,
             stepperMotorControllers,
             stepperMotorReady,
             stepperMotorTestEnabled,
+            motorDriverEnabledRequested,
             lastTelemetryPrint,
             previousExternalPowerSupplyAvailable,
             commandBuffer,

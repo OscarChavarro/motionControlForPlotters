@@ -6,10 +6,15 @@
 #include <stdint.h>
 
 class AvrStepDirectionDriver : public StepperMotorDriver {
-  private:
+  public:
+    // Shared AVR pin-to-register lookup, reused by other single-pin
+    // digital outputs on this platform (e.g. AvrMotorDriverEnable) so the
+    // port/bitmask tables are defined in exactly one place.
     static volatile uint8_t* outputRegisterForPin(uint8_t pin);
     static volatile uint8_t* directionRegisterForPin(uint8_t pin);
     static uint8_t bitMaskForPin(uint8_t pin);
+
+  private:
     static void delayMicroseconds(uint32_t microseconds);
     static void writePin(
         volatile uint8_t* outputRegister,
