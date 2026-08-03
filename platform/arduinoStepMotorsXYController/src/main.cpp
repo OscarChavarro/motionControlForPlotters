@@ -114,7 +114,7 @@ printHardwareConfiguration(UartSerial& serial)
 
     serial.writeString("[");
     serial.writeUnsigned(STEPPER_MOTOR_COUNT);
-    serial.writeString("] A0, D");
+    serial.writeString("] A5, D");
     serial.writeUnsigned(MOTOR_DRIVER_ENABLE_PIN);
     serial.writeString(
         ": external power supply detector input, motor driver enable");

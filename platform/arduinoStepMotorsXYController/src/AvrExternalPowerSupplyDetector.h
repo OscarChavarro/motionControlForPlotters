@@ -5,7 +5,7 @@
 
 class AvrExternalPowerSupplyDetector : public ExternalPowerSupplyDetector {
   private:
-    static uint16_t readAdc0();
+    static uint16_t readAdc5();
     static uint16_t minimumExternalSupplyMillivolts();
     static uint16_t disconnectExternalSupplyMillivolts();
 

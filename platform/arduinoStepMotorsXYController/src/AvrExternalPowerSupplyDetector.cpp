@@ -112,7 +112,7 @@ AvrExternalPowerSupplyDetector::readAnalogInputMillivolts()
 {
     const uint32_t adcReferenceMillivolts = 5000UL;
     return static_cast<uint16_t>(
-        (static_cast<uint32_t>(readAdc0()) * adcReferenceMillivolts) / 1023UL);
+        (static_cast<uint32_t>(readAdc5()) * adcReferenceMillivolts) / 1023UL);
 }
 
 uint16_t
@@ -144,9 +144,13 @@ AvrExternalPowerSupplyDetector::filteredExternalSupplyMillivolts() const
 }
 
 uint16_t
-AvrExternalPowerSupplyDetector::readAdc0()
+AvrExternalPowerSupplyDetector::readAdc5()
 {
-    ADMUX = static_cast<uint8_t>((ADMUX & 0xF0U) | 0U);
+    // A5 instead of A0: on a CNC Shield V3, A0-A3 are committed to
+    // Abort/FeedHold/CycleStart/Coolant (A0 also has the shield's own
+    // 10k pull-up populated, which would bias this voltage divider), while
+    // A4/A5 are documented as unused/reserved.
+    ADMUX = static_cast<uint8_t>((ADMUX & 0xF0U) | 5U);
     ADCSRA = static_cast<uint8_t>(ADCSRA | (1U << ADSC));
     while ((ADCSRA & static_cast<uint8_t>(1U << ADSC)) != 0U) {
     }

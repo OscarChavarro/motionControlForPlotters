@@ -110,7 +110,7 @@ in Fritzing.
 | 5 | D5 / PD5 | D5 / PE3 | Output | A4988/TMC2209 DIR input |
 | 8 | D8 / PB0 | D8 / PH5 | Output | Shared motor driver EN input (active low; CNC Shield X/Y/Z EN) |
 | 13 | D13 / PB5 | D13 / PB7 | Output | Testing LED |
-| A0 | ADC0 / PC0 | ADC0 / PF0 | Analog input | External power supply unit detection via voltage divider from VMOT |
+| A5 | ADC5 / PC5 | ADC5 / PF5 | Analog input | External power supply unit detection via voltage divider from VMOT |
 
 This pinout matches the X-axis socket of a Protoneer-compatible Arduino CNC
 Shield V3 (`doc/references/electronicsElements/arduino-cnc-shield-protoneer.pdf`):
@@ -120,6 +120,13 @@ next `STEP` rising edge. `EN` is active low and shared by every axis on the
 shield: driving it LOW enables all motor drivers at once, HIGH disables them
 all, regardless of each motor's own STEP/DIR state. `D0` and `D1` stay free
 for the USB serial console.
+
+The PSU voltage divider uses `A5` rather than `A0` on purpose: on the CNC
+Shield, `A0`-`A3` are committed to Abort/Feed Hold/Cycle Start/Coolant, and
+`A0` specifically already has the shield's own 10k pull-up populated, which
+would bias this divider's reading if reused. `A4`/`A5` are documented as
+unused/reserved on the shield, so `A5` is free of both the semantic and the
+electrical conflict.
 
 `AvrStepDirectionDriver` supports D2-D13 on UNO/Nano and D2-D53 on Mega
 2560. The program rejects D0/D1 because this firmware reserves them for UART,
@@ -163,14 +170,14 @@ implementations in this target are named `AvrSystemClock`, `AvrUartSerial`,
 `AvrStepDirectionDriver`. `main.cpp` creates these concrete objects during
 initialization and uses the core interface types afterward.
 
-The external power supply detector expects a voltage divider from `VMOT` into `A0`. The divider must keep the analog input inside the board's ADC range.
+The external power supply detector expects a voltage divider from `VMOT` into `A5`. The divider must keep the analog input inside the board's ADC range.
 
-The default `A0` input circuit is designed to detect the external `VMOT`
+The default `A5` input circuit is designed to detect the external `VMOT`
 input at `24V` while keeping the ADC pin below `5V`:
 
 ```text
         220 kOhm
-VMOT--/\/\/------ +---- A0
+VMOT--/\/\/------ +---- A5
                  |
                47 kOhm
                  |
@@ -181,13 +188,13 @@ The default divider values are:
 
 | Resistor | Value | Connection |
 |---|---:|---|
-| VMOT resistor | 220 KOhm | VMOT to A0 |
-| GND resistor | 47 KOhm | A0 to GND |
+| VMOT resistor | 220 KOhm | VMOT to A5 |
+| GND resistor | 47 KOhm | A5 to GND |
 
-At `24V`, this divider drives `A0` to about `4.22V`, which stays safely inside
+At `24V`, this divider drives `A5` to about `4.22V`, which stays safely inside
 the ADC range.
 
-The detector reconstructs the external `VMOT` voltage from the measured `A0`
+The detector reconstructs the external `VMOT` voltage from the measured `A5`
 voltage and the configured divider values. These CMake variables are passed to
 the firmware as compile-time definitions:
 
@@ -195,8 +202,8 @@ the firmware as compile-time definitions:
 |---|---:|---|
 | `EXTERNAL_VOLTAGE_PSU` | `24` | Expected external power supply voltage, in volts |
 | `EXTERNAL_VOLTAGE_PSU_TOLERANCE` | `1.5` | Accepted voltage tolerance below `EXTERNAL_VOLTAGE_PSU`, in volts |
-| `EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS` | `220000` | Legacy variable name; resistor between `VMOT` and `A0`, in ohms |
-| `EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS` | `47000` | Resistor between `A0` and `GND`, in ohms |
+| `EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS` | `220000` | Legacy variable name; resistor between `VMOT` and `A5`, in ohms |
+| `EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS` | `47000` | Resistor between `A5` and `GND`, in ohms |
 | `PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL` | `5000` | Minimum interval between missing-PSU error messages, in milliseconds |
 
 The expected PSU voltage is configured at CMake level with:
@@ -224,7 +231,7 @@ The missing-PSU error print interval is configured in milliseconds with:
 -DPSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL=5000
 ```
 
-At runtime, `AvrExternalPowerSupplyDetector` samples `A0` every 10 ms,
+At runtime, `AvrExternalPowerSupplyDetector` samples `A5` every 10 ms,
 converts the ADC reading to millivolts, and reconstructs the external `VMOT`
 voltage using the configured resistor divider. An IIR filter with a coefficient
 of `1/8` prevents isolated ADC spikes from restarting motion.
