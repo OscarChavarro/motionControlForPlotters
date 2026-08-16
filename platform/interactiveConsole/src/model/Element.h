@@ -18,6 +18,14 @@ class Element {
     return id_;
   }
 
+  void setTitlePrefix(const std::string &prefix) {
+    title_prefix_ = prefix;
+  }
+
+  std::string titleWithPrefix(const std::string &title) const {
+    return title_prefix_.empty() ? title : title_prefix_ + ":" + title;
+  }
+
   // Short heading shown atop the element's box.
   virtual std::string title() const = 0;
 
@@ -44,4 +52,5 @@ class Element {
 
  private:
   int id_;
+  std::string title_prefix_;
 };

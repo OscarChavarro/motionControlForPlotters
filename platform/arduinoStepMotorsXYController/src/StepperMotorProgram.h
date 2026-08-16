@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "SteperMotorDriver.h"
+
 class UartSerial;
 class StepperMotor;
 
@@ -21,7 +23,7 @@ class StepperMotorProgram {
     uint16_t accelerationMilliseconds;
     uint16_t cruiseMilliseconds;
     uint16_t decelerationMilliseconds;
-    const char* driverDescription;
+    SteperMotorDriver driver;
     uint8_t uartReceivePin;
     uint8_t uartTransmitPin;
     bool directionInverted;
@@ -34,7 +36,7 @@ class StepperMotorProgram {
         uint16_t accelerationMilliseconds,
         uint16_t cruiseMilliseconds,
         uint16_t decelerationMilliseconds,
-        const char* driverDescription,
+        SteperMotorDriver driver,
         uint8_t uartReceivePin,
         uint8_t uartTransmitPin,
         bool directionInverted);

@@ -137,7 +137,7 @@ long SteperMotorElement::parsedSpeedValue() const {
 }
 
 std::string SteperMotorElement::title() const {
-  return "Stepper motor " + std::to_string(index_);
+  return titleWithPrefix("Stepper motor " + std::to_string(index_));
 }
 
 std::vector<std::string> SteperMotorElement::infoLines() const {

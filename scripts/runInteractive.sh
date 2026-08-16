@@ -16,7 +16,7 @@ read_cache_value() {
   fi
 }
 
-select_serial_port() {
+find_serial_ports() {
   local ports=()
   local port
 
@@ -50,50 +50,27 @@ PY
     return 1
   fi
 
-  if [ "${#ports[@]}" -eq 1 ]; then
-    echo "${ports[0]}"
-    return 0
-  fi
-
-  echo "Available serial ports:" >&2
-  local index=1
-  for port in "${ports[@]}"; do
-    echo "  ${index}) ${port}" >&2
-    index=$((index + 1))
-  done
-
-  local selection
-  while true; do
-    read -r -p "Select serial port number: " selection
-    if [[ "${selection}" =~ ^[0-9]+$ ]] &&
-      [ "${selection}" -ge 1 ] &&
-      [ "${selection}" -le "${#ports[@]}" ]; then
-      echo "${ports[$((selection - 1))]}"
-      return 0
-    fi
-    echo "Invalid selection." >&2
-  done
+  printf '%s\n' "${ports[@]}"
 }
 
-if [ "$#" -gt 2 ]; then
-  echo "Usage: $0 [serial-port] [baud-rate]" >&2
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [baud-rate]" >&2
   exit 2
 fi
 
-if [ "$#" -ge 1 ]; then
-  port="$1"
-else
-  port="$(select_serial_port)"
-fi
-
-if [ "$#" -eq 2 ]; then
-  baud="$2"
+if [ "$#" -eq 1 ]; then
+  baud="$1"
 else
   cached_baud="$(read_cache_value "ARDUINO_MONITOR_BAUD")"
   if [ -n "${cached_baud}" ]; then
     baud="${cached_baud}"
   fi
 fi
+
+ports=()
+while IFS= read -r port; do
+  ports+=("${port}")
+done < <(find_serial_ports)
 
 cd "${repo_root}"
 
@@ -103,4 +80,4 @@ cmake -S "${repo_root}/platform/interactiveConsole" \
   -DCMAKE_BUILD_TYPE=Debug >/dev/null
 cmake --build "${build_dir}" >/dev/null
 
-exec "${build_dir}/interactiveConsole" "${port}" "${baud}"
+exec "${build_dir}/interactiveConsole" "${baud}" "${ports[@]}"

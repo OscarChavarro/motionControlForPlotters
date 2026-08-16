@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Curses REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(interactiveConsole
   src/main.cpp
@@ -16,6 +17,7 @@ add_executable(interactiveConsole
   src/gui/InteractiveCommandsInputWidget.cpp
   src/gui/ElementsWidget.cpp
   src/model/CsvLine.cpp
+  src/model/Device.cpp
   src/model/PowerSupplyUnitElement.cpp
   src/model/SteperMotorElement.cpp
   src/model/HardwareReportParser.cpp
@@ -27,4 +29,5 @@ target_include_directories(interactiveConsole PRIVATE
   ${CURSES_INCLUDE_DIRS})
 
 target_link_libraries(interactiveConsole PRIVATE
-  ${CURSES_LIBRARIES})
+  ${CURSES_LIBRARIES}
+  Threads::Threads)

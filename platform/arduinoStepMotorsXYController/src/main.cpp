@@ -32,7 +32,7 @@ static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
         STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
         STEPPER_MOTOR_CRUISE_MILLISECONDS,
         STEPPER_MOTOR_DECELERATION_MILLISECONDS,
-        "FS31W01 191202",
+        STEPER_MOTOR_DRIVER_TMC2209,
         StepperMotorProgram::NO_UART_PIN,
         StepperMotorProgram::NO_UART_PIN,
         false),
@@ -50,7 +50,7 @@ static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
         STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
         STEPPER_MOTOR_CRUISE_MILLISECONDS,
         STEPPER_MOTOR_DECELERATION_MILLISECONDS,
-        "FS31W01 191202",
+        STEPER_MOTOR_DRIVER_TMC2209,
         StepperMotorProgram::NO_UART_PIN,
         StepperMotorProgram::NO_UART_PIN,
         STEPPER_MOTOR_Y_DIRECTION_INVERTED != 0)
@@ -89,6 +89,7 @@ printAvailableCommands(UartSerial& serial)
 {
     serial.writeLine("Available commands:");
     serial.writeLine("  . [<id>]  Print telemetry, or one element with an id.");
+    serial.writeLine("  device  Print this firmware device description and role.");
     serial.writeLine("  help  Show the list of available commands.");
     serial.writeLine("  hardware  List hardware elements by pin, tagged [id].");
     serial.writeLine("  get <id>  Print status of one hardware element.");
@@ -119,7 +120,7 @@ printHardwareConfiguration(UartSerial& serial)
         serial.writeString(" (direction, step), ");
         serial.writeString(motor.referenceName);
         serial.writeString(" driven by ");
-        serial.writeString(program.driverDescription);
+        serial.writeString(steperMotorDriverName(program.driver));
 
         if (program.uartReceivePin != StepperMotorProgram::NO_UART_PIN) {
             serial.writeString(" (UART: RX=D");
@@ -138,6 +139,13 @@ printHardwareConfiguration(UartSerial& serial)
     serial.writeString(
         ": external power supply detector input, motor driver enable");
     serial.writeLine("");
+}
+
+static void
+printDeviceDescription(UartSerial& serial)
+{
+    serial.writeLine(
+        "Device arduino ATmega2650, Role XY steper motor controller");
 }
 
 static bool
@@ -282,6 +290,11 @@ handleCommand(
 
     if (commandEquals(command, "help")) {
         printAvailableCommands(serial);
+        return;
+    }
+
+    if (commandEquals(command, "device")) {
+        printDeviceDescription(serial);
         return;
     }
 

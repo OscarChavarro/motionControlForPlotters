@@ -33,7 +33,7 @@ std::string PowerSupplyUnitElement::motorDriverButtonLabel() const {
 }
 
 std::string PowerSupplyUnitElement::title() const {
-  return "Power supply unit";
+  return titleWithPrefix("Power supply unit");
 }
 
 std::vector<std::string> PowerSupplyUnitElement::infoLines() const {

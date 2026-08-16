@@ -99,7 +99,8 @@ bool tryParsePowerSupplyLine(
 }  // namespace
 
 std::vector<std::unique_ptr<Element>> HardwareReportParser::parse(
-    const std::vector<std::string> &lines) {
+    const std::vector<std::string> &lines,
+    const std::string &title_prefix) {
   std::vector<std::unique_ptr<Element>> elements;
 
   for (const std::string &line : lines) {
@@ -112,6 +113,7 @@ std::vector<std::unique_ptr<Element>> HardwareReportParser::parse(
     std::unique_ptr<Element> element;
     if (tryParseStepperMotorLine(rest, id, element) ||
         tryParsePowerSupplyLine(rest, id, element)) {
+      element->setTitlePrefix(title_prefix);
       elements.push_back(std::move(element));
     }
   }

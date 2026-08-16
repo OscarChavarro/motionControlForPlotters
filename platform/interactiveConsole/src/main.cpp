@@ -1,4 +1,5 @@
 #include "model/ColorPairs.h"
+#include "model/Device.h"
 #include "model/Element.h"
 #include "model/HardwareReportParser.h"
 #include "model/OperationModes.h"
@@ -16,14 +17,20 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <memory>
 #include <ncurses.h>
+#include <pthread.h>
 #include <string>
+#include <time.h>
+#include <unistd.h>
 #include <vector>
 
 static volatile sig_atomic_t keep_running = 1;
 static const std::chrono::seconds RECONNECT_INTERVAL(2);
 static const std::chrono::milliseconds HARDWARE_REPORT_TIMEOUT(800);
+static const std::chrono::milliseconds DEVICE_RESPONSE_TIMEOUT(800);
+static const std::chrono::milliseconds DEVICE_BOOT_TIMEOUT(1200);
 static const std::chrono::seconds PSU_POLL_INTERVAL(10);
 static const int KEY_GUIDE_HEIGHT = 1;
 static const int INPUT_HEIGHT = 1;
@@ -53,6 +60,324 @@ static void appendRawLines(
       partial_line += character;
     }
   }
+}
+
+static std::string lastWord(const std::string &text) {
+  const size_t end = text.find_last_not_of(' ');
+  if (end == std::string::npos) {
+    return std::string();
+  }
+  const size_t start = text.find_last_of(' ', end);
+  return text.substr(
+      (start == std::string::npos) ? 0U : start + 1U,
+      end - ((start == std::string::npos) ? 0U : start + 1U) + 1U);
+}
+
+struct ConnectedDevice {
+  ConnectedDevice(
+      std::string port_name,
+      Device device_description,
+      std::unique_ptr<SerialPort> serial_port)
+      : port(std::move(port_name)),
+        device(std::move(device_description)),
+        serial(std::move(serial_port)) {}
+
+  std::string port;
+  Device device;
+  std::unique_ptr<SerialPort> serial;
+};
+
+struct SerialEvent {
+  SerialEvent(bool error_value, std::string text_value)
+      : error(error_value), text(std::move(text_value)) {}
+
+  bool error;
+  std::string text;
+};
+
+struct DeviceControlState {
+  pthread_mutex_t mutex;
+  pthread_cond_t startup_cond;
+  pthread_cond_t command_cond;
+  std::vector<std::string> ports;
+  int baud_rate;
+  bool shutdown_requested;
+  bool startup_complete;
+  bool expected_found;
+  bool connected;
+  std::string active_port;
+  std::string active_hardware_description;
+  size_t device_connection_count;
+  std::deque<std::string> commands;
+  std::deque<SerialEvent> events;
+};
+
+static void initDeviceControlState(
+    DeviceControlState &state,
+    const std::vector<std::string> &ports,
+    int baud_rate) {
+  pthread_mutex_init(&state.mutex, nullptr);
+  pthread_cond_init(&state.startup_cond, nullptr);
+  pthread_cond_init(&state.command_cond, nullptr);
+  state.ports = ports;
+  state.baud_rate = baud_rate;
+  state.shutdown_requested = false;
+  state.startup_complete = false;
+  state.expected_found = false;
+  state.connected = false;
+  state.active_port.clear();
+  state.active_hardware_description.clear();
+  state.device_connection_count = 0U;
+  state.commands.clear();
+  state.events.clear();
+}
+
+static void destroyDeviceControlState(DeviceControlState &state) {
+  pthread_cond_destroy(&state.command_cond);
+  pthread_cond_destroy(&state.startup_cond);
+  pthread_mutex_destroy(&state.mutex);
+}
+
+static void addMillisecondsToTimespec(timespec &time, long milliseconds) {
+  time.tv_nsec += (milliseconds % 1000L) * 1000000L;
+  time.tv_sec += milliseconds / 1000L;
+  if (time.tv_nsec >= 1000000000L) {
+    ++time.tv_sec;
+    time.tv_nsec -= 1000000000L;
+  }
+}
+
+static void waitForCommandsOrTick(DeviceControlState &state) {
+  timespec deadline;
+  clock_gettime(CLOCK_REALTIME, &deadline);
+  addMillisecondsToTimespec(deadline, 30L);
+
+  pthread_mutex_lock(&state.mutex);
+  if (!state.shutdown_requested && state.commands.empty()) {
+    pthread_cond_timedwait(&state.command_cond, &state.mutex, &deadline);
+  }
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static void publishStartupResult(
+    DeviceControlState &state,
+    bool expected_found,
+    bool connected,
+    const std::string &active_port,
+    const std::string &active_hardware_description,
+    size_t device_connection_count) {
+  pthread_mutex_lock(&state.mutex);
+  state.expected_found = expected_found;
+  state.connected = connected;
+  state.active_port = active_port;
+  state.active_hardware_description = active_hardware_description;
+  state.device_connection_count = device_connection_count;
+  state.startup_complete = true;
+  pthread_cond_broadcast(&state.startup_cond);
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static void publishConnected(DeviceControlState &state, bool connected) {
+  pthread_mutex_lock(&state.mutex);
+  state.connected = connected;
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static void publishSerialText(DeviceControlState &state, const std::string &text) {
+  pthread_mutex_lock(&state.mutex);
+  state.events.emplace_back(false, text);
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static void publishSerialError(DeviceControlState &state, const std::string &text) {
+  pthread_mutex_lock(&state.mutex);
+  state.events.emplace_back(true, text);
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static bool takeShutdownRequested(DeviceControlState &state) {
+  pthread_mutex_lock(&state.mutex);
+  const bool shutdown_requested = state.shutdown_requested;
+  pthread_mutex_unlock(&state.mutex);
+  return shutdown_requested;
+}
+
+static std::deque<std::string> takePendingCommands(DeviceControlState &state) {
+  pthread_mutex_lock(&state.mutex);
+  std::deque<std::string> commands;
+  commands.swap(state.commands);
+  pthread_mutex_unlock(&state.mutex);
+  return commands;
+}
+
+static void enqueueDeviceCommand(
+    DeviceControlState &state, const std::string &command) {
+  pthread_mutex_lock(&state.mutex);
+  if (!state.shutdown_requested) {
+    state.commands.push_back(command);
+    pthread_cond_signal(&state.command_cond);
+  }
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static void requestDeviceShutdown(DeviceControlState &state) {
+  pthread_mutex_lock(&state.mutex);
+  state.shutdown_requested = true;
+  pthread_cond_broadcast(&state.command_cond);
+  pthread_mutex_unlock(&state.mutex);
+}
+
+static std::deque<SerialEvent> takeSerialEvents(
+    DeviceControlState &state,
+    bool &connected,
+    std::string &active_port,
+    std::string &active_hardware_description,
+    size_t &device_connection_count) {
+  pthread_mutex_lock(&state.mutex);
+  std::deque<SerialEvent> events;
+  events.swap(state.events);
+  connected = state.connected;
+  active_port = state.active_port;
+  active_hardware_description = state.active_hardware_description;
+  device_connection_count = state.device_connection_count;
+  pthread_mutex_unlock(&state.mutex);
+  return events;
+}
+
+static std::unique_ptr<ConnectedDevice> connectToDevice(
+    const char *port, int baud_rate) {
+  std::unique_ptr<SerialPort> serial(new SerialPort(port, baud_rate));
+  if (!serial->isOpen()) {
+    return nullptr;
+  }
+
+  // Opening classic Arduino USB serial ports can reset their firmware. Drain
+  // startup output before issuing the protocol probe.
+  const std::chrono::steady_clock::time_point boot_deadline =
+      std::chrono::steady_clock::now() + DEVICE_BOOT_TIMEOUT;
+  while (std::chrono::steady_clock::now() < boot_deadline) {
+    bool connection_lost = false;
+    serial->readAvailable(connection_lost);
+    if (connection_lost) {
+      return nullptr;
+    }
+    usleep(20U * 1000U);
+  }
+
+  if (!serial->writeText("device\n")) {
+    return nullptr;
+  }
+
+  std::string partial_line;
+  std::vector<std::string> lines;
+  const std::chrono::steady_clock::time_point response_deadline =
+      std::chrono::steady_clock::now() + DEVICE_RESPONSE_TIMEOUT;
+  while (std::chrono::steady_clock::now() < response_deadline) {
+    bool connection_lost = false;
+    const std::string serial_text = serial->readAvailable(connection_lost);
+    if (connection_lost) {
+      return nullptr;
+    }
+    if (!serial_text.empty()) {
+      appendRawLines(partial_line, lines, serial_text);
+      for (const std::string &line : lines) {
+        Device device("", "");
+        if (Device::parseDescription(line, device)) {
+          return std::unique_ptr<ConnectedDevice>(new ConnectedDevice(
+              port, std::move(device), std::move(serial)));
+        }
+      }
+      lines.clear();
+    }
+    usleep(20U * 1000U);
+  }
+
+  return nullptr;
+}
+
+static void *runDeviceControlThread(void *argument) {
+  DeviceControlState *state = static_cast<DeviceControlState *>(argument);
+
+  std::vector<std::unique_ptr<ConnectedDevice>> connected_devices;
+  for (const std::string &port : state->ports) {
+    if (takeShutdownRequested(*state)) {
+      publishStartupResult(*state, false, false, std::string(), std::string(), 0U);
+      return nullptr;
+    }
+
+    std::unique_ptr<ConnectedDevice> device = connectToDevice(
+        port.c_str(), state->baud_rate);
+    if (device != nullptr) {
+      connected_devices.push_back(std::move(device));
+    }
+  }
+
+  const std::string expected_hardware = "arduino ATmega2650";
+  const std::string expected_role = "XY steper motor controller";
+  auto active_device = std::find_if(
+      connected_devices.begin(),
+      connected_devices.end(),
+      [&expected_hardware, &expected_role](
+          const std::unique_ptr<ConnectedDevice> &device) {
+        return device->device.hardwareDescription() == expected_hardware &&
+               device->device.role() == expected_role;
+      });
+
+  if (active_device == connected_devices.end()) {
+    publishStartupResult(*state, false, false, std::string(), std::string(),
+                         connected_devices.size());
+    return nullptr;
+  }
+
+  ConnectedDevice &selected_device = **active_device;
+  SerialPort &serial = *selected_device.serial;
+  bool connected = serial.isOpen();
+  std::chrono::steady_clock::time_point next_reconnect_attempt =
+      std::chrono::steady_clock::now();
+
+  publishStartupResult(
+      *state,
+      true,
+      connected,
+      selected_device.port,
+      selected_device.device.hardwareDescription(),
+      connected_devices.size());
+
+  while (!takeShutdownRequested(*state)) {
+    std::deque<std::string> commands = takePendingCommands(*state);
+    while (!commands.empty()) {
+      if (connected && !serial.writeText(commands.front())) {
+        publishSerialError(*state, "[serial write error]");
+      }
+      commands.pop_front();
+    }
+
+    if (connected) {
+      bool connection_lost = false;
+      const std::string serial_text = serial.readAvailable(connection_lost);
+      if (connection_lost) {
+        publishSerialError(*state, "[serial error: connection lost, retrying]");
+        connected = false;
+        publishConnected(*state, false);
+        next_reconnect_attempt =
+            std::chrono::steady_clock::now() + RECONNECT_INTERVAL;
+      } else if (!serial_text.empty()) {
+        publishSerialText(*state, serial_text);
+      }
+    } else if (std::chrono::steady_clock::now() >= next_reconnect_attempt) {
+      if (!serial.open(selected_device.port.c_str(), state->baud_rate)) {
+        next_reconnect_attempt =
+            std::chrono::steady_clock::now() + RECONNECT_INTERVAL;
+      } else {
+        connected = true;
+        publishConnected(*state, true);
+      }
+    }
+
+    waitForCommandsOrTick(*state);
+  }
+
+  return nullptr;
 }
 
 // Parses an async "EVENT PSU=READY|LOST VMotor=<v>V" line, emitted by the
@@ -126,12 +451,34 @@ static void syncMotorDriverEnabledAcrossElements(
   }
 }
 
-static int runConsole(const char *port, int baud_rate) {
+static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
   setlocale(LC_ALL, "");
 
-  SerialPort serial(port, baud_rate);
-  if (!serial.isOpen()) {
-    fprintf(stderr, "%s\n", serial.error().c_str());
+  DeviceControlState device_control;
+  initDeviceControlState(device_control, ports, baud_rate);
+
+  pthread_t device_thread;
+  if (pthread_create(
+          &device_thread, nullptr, runDeviceControlThread, &device_control) != 0) {
+    destroyDeviceControlState(device_control);
+    fprintf(stderr, "Could not start device control thread.\n");
+    return 1;
+  }
+
+  pthread_mutex_lock(&device_control.mutex);
+  while (!device_control.startup_complete) {
+    pthread_cond_wait(&device_control.startup_cond, &device_control.mutex);
+  }
+  const bool expected_found = device_control.expected_found;
+  pthread_mutex_unlock(&device_control.mutex);
+
+  if (!expected_found) {
+    requestDeviceShutdown(device_control);
+    pthread_join(device_thread, nullptr);
+    destroyDeviceControlState(device_control);
+    fprintf(
+        stderr,
+        "Expected Device and Role were not found on any serial port.\n");
     return 1;
   }
 
@@ -155,10 +502,11 @@ static int runConsole(const char *port, int baud_rate) {
   ElementsWidget elements_widget;
 
   OperationModes mode = CONSOLE_MODE;
-  std::string status = std::string(port) + " " + std::to_string(baud_rate) +
-                       " baud";
   bool connected = true;
-  std::chrono::steady_clock::time_point next_reconnect_attempt;
+  std::string active_port;
+  std::string active_hardware_description;
+  std::string element_title_prefix;
+  size_t device_connection_count = 0U;
 
   std::vector<std::unique_ptr<Element>> elements;
   // Keyboard focus model: focus is either the console input line, or one
@@ -180,7 +528,8 @@ static int runConsole(const char *port, int baud_rate) {
     }
     for (auto &element : elements) {
       if (dynamic_cast<PowerSupplyUnitElement *>(element.get()) != nullptr) {
-        serial.writeText(". " + std::to_string(element->id()) + "\n");
+        enqueueDeviceCommand(
+            device_control, ". " + std::to_string(element->id()) + "\n");
       }
     }
   };
@@ -189,7 +538,7 @@ static int runConsole(const char *port, int baud_rate) {
     if (!connected) {
       return;
     }
-    serial.writeText("hardware\n");
+    enqueueDeviceCommand(device_control, "hardware\n");
     collecting_hardware_report = true;
     hardware_report_lines.clear();
     hardware_report_partial_line.clear();
@@ -198,7 +547,8 @@ static int runConsole(const char *port, int baud_rate) {
   };
 
   auto finishHardwareReport = [&]() {
-    elements = HardwareReportParser::parse(hardware_report_lines);
+    elements = HardwareReportParser::parse(
+        hardware_report_lines, element_title_prefix);
     collecting_hardware_report = false;
     if (elements.empty()) {
       console_focused = true;
@@ -209,40 +559,38 @@ static int runConsole(const char *port, int baud_rate) {
   };
 
   while (keep_running) {
-    if (connected) {
-      bool connection_lost = false;
-      std::string serial_text = serial.readAvailable(connection_lost);
-      if (connection_lost) {
-        console.appendErrorLine("[serial error: connection lost, retrying]");
-        connected = false;
-        next_reconnect_attempt =
-            std::chrono::steady_clock::now() + RECONNECT_INTERVAL;
-      } else if (!serial_text.empty()) {
-        console.appendSerialText(serial_text);
-        if (collecting_hardware_report) {
-          appendRawLines(
-              hardware_report_partial_line, hardware_report_lines, serial_text);
-          if (!hardware_report_lines.empty() &&
-              hardware_report_lines.back().find("power supply") !=
-                  std::string::npos) {
-            finishHardwareReport();
-          }
-        }
-        std::vector<std::string> status_lines;
-        appendRawLines(status_line_partial, status_lines, serial_text);
-        for (const std::string &status_line : status_lines) {
-          routeIncomingStatusLine(status_line, elements);
-        }
-        if (!status_lines.empty()) {
-          syncMotorDriverEnabledAcrossElements(elements);
+    std::deque<SerialEvent> serial_events = takeSerialEvents(
+        device_control,
+        connected,
+        active_port,
+        active_hardware_description,
+        device_connection_count);
+    element_title_prefix = lastWord(active_hardware_description);
+    while (!serial_events.empty()) {
+      const SerialEvent event = serial_events.front();
+      serial_events.pop_front();
+      if (event.error) {
+        console.appendErrorLine(event.text);
+        continue;
+      }
+
+      console.appendSerialText(event.text);
+      if (collecting_hardware_report) {
+        appendRawLines(
+            hardware_report_partial_line, hardware_report_lines, event.text);
+        if (!hardware_report_lines.empty() &&
+            hardware_report_lines.back().find("power supply") !=
+                std::string::npos) {
+          finishHardwareReport();
         }
       }
-    } else if (std::chrono::steady_clock::now() >= next_reconnect_attempt) {
-      if (!serial.open(port, baud_rate)) {
-        next_reconnect_attempt =
-            std::chrono::steady_clock::now() + RECONNECT_INTERVAL;
-      } else {
-        connected = true;
+      std::vector<std::string> status_lines;
+      appendRawLines(status_line_partial, status_lines, event.text);
+      for (const std::string &status_line : status_lines) {
+        routeIncomingStatusLine(status_line, elements);
+      }
+      if (!status_lines.empty()) {
+        syncMotorDriverEnabledAcrossElements(elements);
       }
     }
 
@@ -314,8 +662,10 @@ static int runConsole(const char *port, int baud_rate) {
         command_input.navigateHistoryUp();
       } else if (command_input.handleKey(key)) {
         std::string message_to_send = command_input.takeCommand() + "\n";
-        if (connected && !serial.writeText(message_to_send)) {
-          console.appendSerialText("[serial write error]\n");
+        if (connected) {
+          enqueueDeviceCommand(device_control, message_to_send);
+        } else {
+          console.appendErrorLine("[serial write error]");
         }
       }
     } else if (!elements.empty()) {
@@ -323,8 +673,10 @@ static int runConsole(const char *port, int baud_rate) {
       if (elements[focused_element_index]->handleControlKey(
               key, command_to_send) &&
           !command_to_send.empty()) {
-        if (connected && !serial.writeText(command_to_send + "\n")) {
-          console.appendSerialText("[serial write error]\n");
+        if (connected) {
+          enqueueDeviceCommand(device_control, command_to_send + "\n");
+        } else {
+          console.appendErrorLine("[serial write error]");
         }
       }
     }
@@ -335,6 +687,11 @@ static int runConsole(const char *port, int baud_rate) {
     }
 
     erase();
+    const std::string status = active_port + " " +
+                               std::to_string(baud_rate) + " baud (" +
+                               std::to_string(device_connection_count) +
+                               " device connections)" +
+                               (connected ? "" : " disconnected");
     if (mode == ELEMENTS_MODE && elements_height > 0) {
       const size_t highlighted_index =
           console_focused ? elements.size() : focused_element_index;
@@ -353,25 +710,33 @@ static int runConsole(const char *port, int baud_rate) {
     napms(30);
   }
 
+  requestDeviceShutdown(device_control);
+  pthread_join(device_thread, nullptr);
+  destroyDeviceControlState(device_control);
   endwin();
   return 0;
 }
 
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    fprintf(stderr, "Usage: %s <serial-port> <baud-rate>\n", argv[0]);
+  if (argc < 2) {
+    fprintf(stderr, "Usage: %s <baud-rate> [serial-port...]\n", argv[0]);
     return 2;
   }
 
   char *end = nullptr;
-  long baud_rate = strtol(argv[2], &end, 10);
-  if (end == argv[2] || *end != '\0' || baud_rate <= 0) {
-    fprintf(stderr, "Invalid baud rate: %s\n", argv[2]);
+  long baud_rate = strtol(argv[1], &end, 10);
+  if (end == argv[1] || *end != '\0' || baud_rate <= 0) {
+    fprintf(stderr, "Invalid baud rate: %s\n", argv[1]);
     return 2;
+  }
+
+  std::vector<std::string> ports;
+  for (int index = 2; index < argc; ++index) {
+    ports.emplace_back(argv[index]);
   }
 
   signal(SIGINT, handleSignal);
   signal(SIGTERM, handleSignal);
 
-  return runConsole(argv[1], static_cast<int>(baud_rate));
+  return runConsole(ports, static_cast<int>(baud_rate));
 }

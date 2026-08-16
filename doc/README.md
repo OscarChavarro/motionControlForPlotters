@@ -23,6 +23,31 @@ Primary goals:
 
 The same motion core should execute on every platform, with only the HAL changing.
 
+# Multiple device system
+
+Every firmware integrated with the interactive console must implement the
+`device` serial command. It must return exactly one line in this format:
+
+```text
+Device <hardware description>, Role <firmware role>
+```
+
+The hardware description identifies the board or hardware on which the
+firmware runs. The role identifies the responsibility provided by that
+firmware. For example, the current Arduino controller returns:
+
+```text
+Device arduino ATmega2650, Role XY steper motor controller
+```
+
+When started through `./scripts/runInteractive.sh`, the interactive console
+enumerates all available USB serial ports, opens each one, and sends `device`.
+It retains the connections that provide a valid device description and starts
+only when it finds the expected device and role. If no expected firmware is
+found, it exits with an English error message. This discovery contract allows
+future console features to communicate with several role-specific devices at
+the same time.
+
 ## Current Implementation Phase
 
 The repository is currently building the infrastructure incrementally. The
