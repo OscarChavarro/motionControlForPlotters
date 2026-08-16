@@ -140,8 +140,16 @@ The top-level CMake project exposes these Arduino-related options:
 - `ARDUINO_UPLOAD_BAUD`: optional upload baud override.
 - `ARDUINO_MONITOR_BAUD`: optional serial monitor baud override.
 - `ARDUINO_PROGRAMMER`: optional `avrdude` programmer override.
-- `STEPPER_MOTOR_STEP_PIN`: first diagnostic motor `STEP` pin.
-- `STEPPER_MOTOR_DIRECTION_PIN`: first diagnostic motor `DIR` pin.
+- `STEPPER_MOTOR_STEP_PIN`: X-axis diagnostic motor `STEP` pin (default D2).
+- `STEPPER_MOTOR_DIRECTION_PIN`: X-axis diagnostic motor `DIR` pin (default D5).
+- `STEPPER_MOTOR_Y_STEP_PIN`: Y-axis FS31W01 `STEP` pin (default D3).
+- `STEPPER_MOTOR_Y_DIRECTION_PIN`: Y-axis FS31W01 `DIR` pin (default D6).
+- `STEPPER_MOTOR_Y_DIRECTION_INVERTED`: inverts the Y `DIR` output in
+  firmware (default `0`), without swapping motor wires.
+- `STEPPER_MOTOR_Y_FULL_STEPS_PER_ROTATION`: Y-axis motor resolution in full
+  steps (default 200).
+- `STEPPER_MOTOR_Y_TRAVEL_ROTATIONS`: rotations for one direction of the Y
+  test profile (default 2, matching X).
 - `STEPPER_MOTOR_TRAVEL_ROTATIONS`: rotations in each forward/backward segment.
 
 The Arduino subproject also accepts lower-level overrides such as `ARDUINO_MCU` and `ARDUINO_F_CPU` when a preset is not enough.

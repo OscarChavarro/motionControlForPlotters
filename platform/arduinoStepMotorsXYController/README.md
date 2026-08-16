@@ -107,7 +107,9 @@ in Fritzing.
 | Pin | UNO | MEGA2560 | Direction | Use |
 |---|---|---|---|---|
 | 2 | D2 / PD2 | D2 / PE4 | Output | A4988/TMC2209 STEP input |
+| 3 | D3 / PD3 | D3 / PE5 | Output | Y-axis A4988 STEP input |
 | 5 | D5 / PD5 | D5 / PE3 | Output | A4988/TMC2209 DIR input |
+| 6 | D6 / PD6 | D6 / PH3 | Output | Y-axis A4988 DIR input |
 | 8 | D8 / PB0 | D8 / PH5 | Output | Shared motor driver EN input (active low; CNC Shield X/Y/Z EN) |
 | 13 | D13 / PB5 | D13 / PB7 | Output | Testing LED |
 | A5 | ADC5 / PC5 | ADC5 / PF5 | Analog input | External power supply unit detection via voltage divider from VMOT |
@@ -120,6 +122,13 @@ next `STEP` rising edge. `EN` is active low and shared by every axis on the
 shield: driving it LOW enables all motor drivers at once, HIGH disables them
 all, regardless of each motor's own STEP/DIR state. `D0` and `D1` stay free
 for the USB serial console.
+
+The X registry entry uses a `D42HSC4409B-23B` motor driven by an Artillery
+`FS31W01 191202` module in STEP/DIR mode. The second entry is wired to the
+CNC Shield Y socket: STEP=D3 and DIR=D6; it uses the same motor and driver
+identification. Both drivers are configured at 1/16 microstepping, so each
+200-step motor reports 3200 microsteps per rotation. Their test segments are
+two rotations. The shared D8 enable line controls both X and Y drivers.
 
 The PSU voltage divider uses `A5` rather than `A0` on purpose: on the CNC
 Shield, `A0`-`A3` are committed to Abort/Feed Hold/Cycle Start/Coolant, and
@@ -140,6 +149,11 @@ The first stepper motor and its controller are configured with:
 ```bash
 -DSTEPPER_MOTOR_STEP_PIN=2
 -DSTEPPER_MOTOR_DIRECTION_PIN=5
+-DSTEPPER_MOTOR_Y_STEP_PIN=3
+-DSTEPPER_MOTOR_Y_DIRECTION_PIN=6
+-DSTEPPER_MOTOR_Y_DIRECTION_INVERTED=0
+-DSTEPPER_MOTOR_Y_FULL_STEPS_PER_ROTATION=200
+-DSTEPPER_MOTOR_Y_TRAVEL_ROTATIONS=2
 -DMOTOR_DRIVER_ENABLE_PIN=8
 -DSTEPPER_MOTOR_STEP_PULSE_MICROSECONDS=5
 -DSTEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS=5

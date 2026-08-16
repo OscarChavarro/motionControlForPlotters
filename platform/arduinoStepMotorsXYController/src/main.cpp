@@ -21,7 +21,7 @@ static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
     StepperMotorProgram(
         StepperMotor(
             BIPOLAR_STEPPER_MOTOR,
-            "Artillery D42HSA5401-23B",
+            "D42HSC4409B-23B",
             200U,
             BIPOLAR_STEPPER_MOTOR_MICROSTEP_16,
             STEPPER_MOTOR_STEP_PIN,
@@ -32,9 +32,28 @@ static const StepperMotorProgram STEPPER_MOTOR_PROGRAMS[] = {
         STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
         STEPPER_MOTOR_CRUISE_MILLISECONDS,
         STEPPER_MOTOR_DECELERATION_MILLISECONDS,
-        "A4988",
+        "FS31W01 191202",
         StepperMotorProgram::NO_UART_PIN,
-        StepperMotorProgram::NO_UART_PIN)
+        StepperMotorProgram::NO_UART_PIN,
+        false),
+    StepperMotorProgram(
+        StepperMotor(
+            BIPOLAR_STEPPER_MOTOR,
+            "D42HSC4409B-23B",
+            STEPPER_MOTOR_Y_FULL_STEPS_PER_ROTATION,
+            BIPOLAR_STEPPER_MOTOR_MICROSTEP_16,
+            STEPPER_MOTOR_Y_STEP_PIN,
+            STEPPER_MOTOR_Y_DIRECTION_PIN),
+        STEPPER_MOTOR_STEP_PULSE_MICROSECONDS,
+        STEPPER_MOTOR_DIRECTION_SETUP_MICROSECONDS,
+        STEPPER_MOTOR_Y_TRAVEL_ROTATIONS,
+        STEPPER_MOTOR_ACCELERATION_MILLISECONDS,
+        STEPPER_MOTOR_CRUISE_MILLISECONDS,
+        STEPPER_MOTOR_DECELERATION_MILLISECONDS,
+        "FS31W01 191202",
+        StepperMotorProgram::NO_UART_PIN,
+        StepperMotorProgram::NO_UART_PIN,
+        STEPPER_MOTOR_Y_DIRECTION_INVERTED != 0)
 };
 
 static const uint8_t STEPPER_MOTOR_COUNT = static_cast<uint8_t>(
@@ -587,7 +606,8 @@ initializeStepperMotorPrograms(
             program.motor.stepPin,
             program.motor.directionPin,
             program.stepPulseMicroseconds,
-            program.directionSetupMicroseconds);
+            program.directionSetupMicroseconds,
+            program.directionInverted);
         stepperMotorReady[i] = hasValidAndUniquePins(i) &&
             stepperMotorControllers[i].initialize(stepperMotorDrivers[i]);
         stepperMotorControllers[i].configureRepeatingTrapezoid(

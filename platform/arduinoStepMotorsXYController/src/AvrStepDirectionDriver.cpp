@@ -8,6 +8,7 @@ AvrStepDirectionDriver::AvrStepDirectionDriver()
       m_directionPin(0),
       m_stepPulseMicroseconds(0),
       m_directionSetupMicroseconds(0),
+      m_directionInverted(false),
       m_stepOutputRegister(nullptr),
       m_directionOutputRegister(nullptr),
       m_stepBitMask(0),
@@ -20,12 +21,14 @@ AvrStepDirectionDriver::configure(
     uint8_t stepPin,
     uint8_t directionPin,
     uint16_t stepPulseMicroseconds,
-    uint16_t directionSetupMicroseconds)
+    uint16_t directionSetupMicroseconds,
+    bool directionInverted)
 {
     m_stepPin = stepPin;
     m_directionPin = directionPin;
     m_stepPulseMicroseconds = stepPulseMicroseconds;
     m_directionSetupMicroseconds = directionSetupMicroseconds;
+    m_directionInverted = directionInverted;
 }
 
 bool
@@ -60,7 +63,10 @@ AvrStepDirectionDriver::initialize()
 void
 AvrStepDirectionDriver::setDirection(bool forward)
 {
-    writePin(m_directionOutputRegister, m_directionBitMask, forward);
+    writePin(
+        m_directionOutputRegister,
+        m_directionBitMask,
+        forward != m_directionInverted);
     delayMicroseconds(m_directionSetupMicroseconds);
 }
 

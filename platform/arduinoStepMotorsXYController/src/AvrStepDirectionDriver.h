@@ -25,6 +25,7 @@ class AvrStepDirectionDriver : public StepperMotorDriver {
     uint8_t m_directionPin;
     uint16_t m_stepPulseMicroseconds;
     uint16_t m_directionSetupMicroseconds;
+    bool m_directionInverted;
     volatile uint8_t* m_stepOutputRegister;
     volatile uint8_t* m_directionOutputRegister;
     uint8_t m_stepBitMask;
@@ -37,7 +38,8 @@ class AvrStepDirectionDriver : public StepperMotorDriver {
         uint8_t stepPin,
         uint8_t directionPin,
         uint16_t stepPulseMicroseconds,
-        uint16_t directionSetupMicroseconds);
+        uint16_t directionSetupMicroseconds,
+        bool directionInverted);
 
     bool initialize() override;
     void setDirection(bool forward) override;

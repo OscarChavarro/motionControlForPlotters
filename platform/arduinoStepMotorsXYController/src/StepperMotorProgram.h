@@ -24,6 +24,7 @@ class StepperMotorProgram {
     const char* driverDescription;
     uint8_t uartReceivePin;
     uint8_t uartTransmitPin;
+    bool directionInverted;
 
     StepperMotorProgram(
         const StepperMotor& motor,
@@ -35,7 +36,8 @@ class StepperMotorProgram {
         uint16_t decelerationMilliseconds,
         const char* driverDescription,
         uint8_t uartReceivePin,
-        uint8_t uartTransmitPin);
+        uint8_t uartTransmitPin,
+        bool directionInverted);
 
     void printConfiguration(
         UartSerial& serial,

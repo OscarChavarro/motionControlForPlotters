@@ -12,7 +12,8 @@ StepperMotorProgram::StepperMotorProgram(
     uint16_t decelerationMillisecondsValue,
     const char* driverDescriptionValue,
     uint8_t uartReceivePinValue,
-    uint8_t uartTransmitPinValue)
+    uint8_t uartTransmitPinValue,
+    bool directionInvertedValue)
     : motor(motorValue),
       stepPulseMicroseconds(stepPulseMicrosecondsValue),
       directionSetupMicroseconds(directionSetupMicrosecondsValue),
@@ -22,7 +23,8 @@ StepperMotorProgram::StepperMotorProgram(
       decelerationMilliseconds(decelerationMillisecondsValue),
       driverDescription(driverDescriptionValue),
       uartReceivePin(uartReceivePinValue),
-      uartTransmitPin(uartTransmitPinValue)
+      uartTransmitPin(uartTransmitPinValue),
+      directionInverted(directionInvertedValue)
 {
 }
 
