@@ -1,11 +1,14 @@
+#include <avr/io.h>
+
 #include "AvrExternalPowerSupplyDetector.h"
 
-#include <avr/io.h>
+namespace {
+const uint16_t NOMINAL_EXTERNAL_SUPPLY_MILLIVOLTS =
+    static_cast<uint16_t>(EXTERNAL_VOLTAGE_PSU * 1000.0);
+}
 
 AvrExternalPowerSupplyDetector::AvrExternalPowerSupplyDetector()
     : m_lastSampleMilliseconds(0),
-      m_rawExternalSupplyMillivolts(0),
-      m_filteredExternalSupplyMillivolts(0),
       m_consecutiveGoodSamples(0),
       m_consecutiveBadSamples(0),
       m_externalPowerSupplyAvailable(false),
@@ -16,16 +19,13 @@ AvrExternalPowerSupplyDetector::AvrExternalPowerSupplyDetector()
 void
 AvrExternalPowerSupplyDetector::initialize()
 {
-    ADMUX = static_cast<uint8_t>(1U << REFS0);
-    ADCSRA = static_cast<uint8_t>(
-        (1U << ADEN) |
-        (1U << ADPS2) |
-        (1U << ADPS1) |
-        (1U << ADPS0));
+    // Input with the AVR's internal pull-up enabled: idles HIGH, and is
+    // pulled LOW by the PC817 phototransistor when VMOT is present. No
+    // external pull-up resistor is needed.
+    *analogInputDdrRegister() &= static_cast<uint8_t>(~analogInputBitMask());
+    *analogInputPortRegister() |= analogInputBitMask();
 
     m_lastSampleMilliseconds = 0;
-    m_rawExternalSupplyMillivolts = 0;
-    m_filteredExternalSupplyMillivolts = 0;
     m_consecutiveGoodSamples = 0;
     m_consecutiveBadSamples = 0;
     m_externalPowerSupplyAvailable = false;
@@ -45,25 +45,12 @@ AvrExternalPowerSupplyDetector::update(uint32_t nowMilliseconds)
     }
 
     m_lastSampleMilliseconds = nowMilliseconds;
-    m_rawExternalSupplyMillivolts = readExternalSupplyMillivolts();
-
-    if (!m_hasSample) {
-        m_filteredExternalSupplyMillivolts =
-            m_rawExternalSupplyMillivolts;
-        m_hasSample = true;
-    }
-    else {
-        const uint32_t filteredAccumulator =
-            static_cast<uint32_t>(m_filteredExternalSupplyMillivolts) * 7UL +
-            m_rawExternalSupplyMillivolts + 4UL;
-        m_filteredExternalSupplyMillivolts =
-            static_cast<uint16_t>(filteredAccumulator / 8UL);
-    }
+    m_hasSample = true;
+    const bool rawPresent = readExternalSupplyPresent();
 
     if (m_externalPowerSupplyAvailable) {
         m_consecutiveGoodSamples = 0;
-        if (m_filteredExternalSupplyMillivolts <
-            disconnectExternalSupplyMillivolts()) {
+        if (!rawPresent) {
             if (m_consecutiveBadSamples < stableSampleCount) {
                 ++m_consecutiveBadSamples;
             }
@@ -77,8 +64,7 @@ AvrExternalPowerSupplyDetector::update(uint32_t nowMilliseconds)
     }
     else {
         m_consecutiveBadSamples = 0;
-        if (m_filteredExternalSupplyMillivolts >=
-            minimumExternalSupplyMillivolts()) {
+        if (rawPresent) {
             if (m_consecutiveGoodSamples < stableSampleCount) {
                 ++m_consecutiveGoodSamples;
             }
@@ -102,83 +88,78 @@ AvrExternalPowerSupplyDetector::isExternalPowerSupplyAvailable() const
 
 bool
 AvrExternalPowerSupplyDetector::isExternalPowerSupplyAvailable(
-    uint16_t externalSupplyMillivolts) const
+    uint16_t externalSupplyMilliVolts) const
 {
-    return externalSupplyMillivolts >= minimumExternalSupplyMillivolts();
+    return externalSupplyMilliVolts > 0U;
 }
 
 uint16_t
-AvrExternalPowerSupplyDetector::readAnalogInputMillivolts()
+AvrExternalPowerSupplyDetector::readAnalogInputMilliVolts()
 {
-    const uint32_t adcReferenceMillivolts = 5000UL;
-    return static_cast<uint16_t>(
-        (static_cast<uint32_t>(readAdc5()) * adcReferenceMillivolts) / 1023UL);
+    // The actual voltage present at the pin itself: near 0V when the
+    // phototransistor conducts, near 5V from the internal pull-up when it
+    // does not.
+    return readExternalSupplyPresent() ? 0U : 5000U;
 }
 
 uint16_t
-AvrExternalPowerSupplyDetector::readExternalSupplyMillivolts()
+AvrExternalPowerSupplyDetector::readExternalSupplyMilliVolts()
 {
-    const uint32_t analogInputMillivolts = readAnalogInputMillivolts();
-    const uint32_t vinResistorOhms =
-        static_cast<uint32_t>(EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS);
-    const uint32_t gndResistorOhms =
-        static_cast<uint32_t>(EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS);
-
-    if (gndResistorOhms == 0UL) {
-        return 0;
-    }
-
-    uint32_t externalSupplyMillivolts =
-        (analogInputMillivolts * (vinResistorOhms + gndResistorOhms)) /
-        gndResistorOhms;
-    if (externalSupplyMillivolts > 65535UL) {
-        externalSupplyMillivolts = 65535UL;
-    }
-    return static_cast<uint16_t>(externalSupplyMillivolts);
+    return readExternalSupplyPresent() ?
+        NOMINAL_EXTERNAL_SUPPLY_MILLIVOLTS : 0U;
 }
 
 uint16_t
-AvrExternalPowerSupplyDetector::filteredExternalSupplyMillivolts() const
+AvrExternalPowerSupplyDetector::filteredExternalSupplyMilliVolts() const
 {
-    return m_filteredExternalSupplyMillivolts;
+    return m_externalPowerSupplyAvailable ?
+        NOMINAL_EXTERNAL_SUPPLY_MILLIVOLTS : 0U;
 }
 
-uint16_t
-AvrExternalPowerSupplyDetector::readAdc5()
+bool
+AvrExternalPowerSupplyDetector::readExternalSupplyPresent()
 {
-    // A5 instead of A0: on a CNC Shield V3, A0-A3 are committed to
-    // Abort/FeedHold/CycleStart/Coolant (A0 also has the shield's own
-    // 10k pull-up populated, which would bias this voltage divider), while
-    // A4/A5 are documented as unused/reserved.
-    ADMUX = static_cast<uint8_t>((ADMUX & 0xF0U) | 5U);
-    ADCSRA = static_cast<uint8_t>(ADCSRA | (1U << ADSC));
-    while ((ADCSRA & static_cast<uint8_t>(1U << ADSC)) != 0U) {
-    }
-    return ADC;
+    return (*analogInputPinRegister() & analogInputBitMask()) == 0U;
 }
 
-uint16_t
-AvrExternalPowerSupplyDetector::minimumExternalSupplyMillivolts()
+volatile uint8_t*
+AvrExternalPowerSupplyDetector::analogInputPinRegister()
 {
-    const int32_t minimumMillivolts =
-        static_cast<int32_t>(
-            (EXTERNAL_VOLTAGE_PSU - EXTERNAL_VOLTAGE_PSU_TOLERANCE) * 1000.0);
-    if (minimumMillivolts <= 0L) {
-        return 0;
-    }
-    if (minimumMillivolts > 65535L) {
-        return 65535U;
-    }
-    return static_cast<uint16_t>(minimumMillivolts);
+#if defined(ARDUINO_AVR_MEGA2560)
+    return &PINF;
+#elif defined(ARDUINO_AVR_UNO) || defined(ARDUINO_AVR_NANO)
+    return &PINC;
+#else
+#error "AvrExternalPowerSupplyDetector pin mapping is not defined for this board"
+#endif
 }
 
-uint16_t
-AvrExternalPowerSupplyDetector::disconnectExternalSupplyMillivolts()
+volatile uint8_t*
+AvrExternalPowerSupplyDetector::analogInputPortRegister()
 {
-    const uint16_t hysteresisMillivolts = 400U;
-    const uint16_t minimumMillivolts = minimumExternalSupplyMillivolts();
-    if (minimumMillivolts <= hysteresisMillivolts) {
-        return 0;
-    }
-    return static_cast<uint16_t>(minimumMillivolts - hysteresisMillivolts);
+#if defined(ARDUINO_AVR_MEGA2560)
+    return &PORTF;
+#elif defined(ARDUINO_AVR_UNO) || defined(ARDUINO_AVR_NANO)
+    return &PORTC;
+#else
+#error "AvrExternalPowerSupplyDetector pin mapping is not defined for this board"
+#endif
+}
+
+volatile uint8_t*
+AvrExternalPowerSupplyDetector::analogInputDdrRegister()
+{
+#if defined(ARDUINO_AVR_MEGA2560)
+    return &DDRF;
+#elif defined(ARDUINO_AVR_UNO) || defined(ARDUINO_AVR_NANO)
+    return &DDRC;
+#else
+#error "AvrExternalPowerSupplyDetector pin mapping is not defined for this board"
+#endif
+}
+
+uint8_t
+AvrExternalPowerSupplyDetector::analogInputBitMask()
+{
+    return static_cast<uint8_t>(1U << 5);
 }

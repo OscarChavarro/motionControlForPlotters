@@ -228,7 +228,7 @@ printElementStatus(
                 "OFF");
         serial.writeString(",");
         serial.writeUnsigned(
-            externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+                externalPowerSupplyDetector.filteredExternalSupplyMilliVolts());
         serial.writeString(",");
         serial.writeString(motorDriverEnabledRequested ? "1" : "0");
         serial.writeLine("");
@@ -628,7 +628,7 @@ updateExternalPowerSupplyStatus(
         serial.writeString(externalPowerSupplyAvailable ? "READY" : "LOST");
         serial.writeString(" VMotor=");
         serial.writeVoltageMillivolts(
-            externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+                externalPowerSupplyDetector.filteredExternalSupplyMilliVolts());
         serial.writeLine("");
     }
 
@@ -673,7 +673,7 @@ printTelemetry(
 
     serial.writeString("VMotor: ");
     serial.writeVoltageMillivolts(
-        externalPowerSupplyDetector.filteredExternalSupplyMillivolts());
+            externalPowerSupplyDetector.filteredExternalSupplyMilliVolts());
     serial.writeString(" PSU: ");
     serial.writeString(
         externalPowerSupplyDetector.isExternalPowerSupplyAvailable() ?

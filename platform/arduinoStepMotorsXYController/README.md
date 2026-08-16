@@ -170,59 +170,52 @@ implementations in this target are named `AvrSystemClock`, `AvrUartSerial`,
 `AvrStepDirectionDriver`. `main.cpp` creates these concrete objects during
 initialization and uses the core interface types afterward.
 
-The external power supply detector expects a voltage divider from `VMOT` into `A5`. The divider must keep the analog input inside the board's ADC range.
-
-The default `A5` input circuit is designed to detect the external `VMOT`
-input at `24V` while keeping the ADC pin below `5V`:
+The external power supply detector no longer measures a voltage: it reads a
+`PC817` opto-isolator wired to `A5`, which reports only presence/absence of
+the external `VMOT` supply.
 
 ```text
-        220 kOhm
-VMOT--/\/\/------ +---- A5
-                 |
-               47 kOhm
-                 |
-                GND
+VMOT --/\/\/-- (1)PC817(2) -- GND      LED side: lit whenever VMOT is present
+  2.2 kOhm
+
+ 5V (internal pull-up) --- A5 ---(3)PC817(4)--- GND   Phototransistor side
 ```
 
-The default divider values are:
+Wiring:
 
-| Resistor | Value | Connection |
-|---|---:|---|
-| VMOT resistor | 220 KOhm | VMOT to A5 |
-| GND resistor | 47 KOhm | A5 to GND |
+| PC817 pin | Connects to | Role |
+|---|---|---|
+| 1 (LED anode) | `VMOT` through a `2.2 kOhm` series resistor | Lights the opto LED whenever the external supply is present |
+| 2 (LED cathode) | `GND` | LED return path |
+| 3 (phototransistor) | `A5` | Pulled toward `GND` while the LED is lit |
+| 4 (phototransistor) | `GND` | Phototransistor return path |
 
-At `24V`, this divider drives `A5` to about `4.22V`, which stays safely inside
-the ADC range.
+`A5` is configured as a digital input with the ATmega's internal pull-up
+enabled, so it idles HIGH (~5V) with no external pull-up resistor needed.
+Reading is **inverted logic**: `LOW` (~0V) means the opto LED is lit and the
+external supply is present; `HIGH` (~5V, pulled up) means it is absent. This
+also sidesteps the analog-divider conflict with the CNC Shield's `A0`-`A3`
+pins discussed above: `A5` here just needs a clean digital HIGH/LOW, not an
+analog measurement.
 
-The detector reconstructs the external `VMOT` voltage from the measured `A5`
-voltage and the configured divider values. These CMake variables are passed to
-the firmware as compile-time definitions:
+Since there is no measured voltage anymore, the millivolt-returning methods
+on `AvrExternalPowerSupplyDetector` (`readAnalogInputMilliVolts`,
+`readExternalSupplyMilliVolts`, `filteredExternalSupplyMilliVolts`) report a
+nominal value instead of a measurement: `EXTERNAL_VOLTAGE_PSU * 1000` when
+present, `0` when absent. This keeps the existing telemetry, `EVENT
+PSU=READY|LOST VMOTOR=<voltage>V` line, and `PSU,<ON|OFF>,<voltage>,...` CSV
+format unchanged, even though `<voltage>` is now a configured nominal value
+rather than something actually measured.
 
 | Variable | Default | Used for |
 |---|---:|---|
-| `EXTERNAL_VOLTAGE_PSU` | `24` | Expected external power supply voltage, in volts |
-| `EXTERNAL_VOLTAGE_PSU_TOLERANCE` | `1.5` | Accepted voltage tolerance below `EXTERNAL_VOLTAGE_PSU`, in volts |
-| `EXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS` | `220000` | Legacy variable name; resistor between `VMOT` and `A5`, in ohms |
-| `EXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS` | `47000` | Resistor between `A5` and `GND`, in ohms |
+| `EXTERNAL_VOLTAGE_PSU` | `24` | Nominal external power supply voltage, in volts, reported when the opto-isolator detects `VMOT` present |
 | `PSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL` | `5000` | Minimum interval between missing-PSU error messages, in milliseconds |
 
-The expected PSU voltage is configured at CMake level with:
+The nominal PSU voltage is configured at CMake level with:
 
 ```bash
 -DEXTERNAL_VOLTAGE_PSU=24
-```
-
-The detector accepts a voltage tolerance around that value:
-
-```bash
--DEXTERNAL_VOLTAGE_PSU_TOLERANCE=1.5
-```
-
-The voltage divider is configured with:
-
-```bash
--DEXTERNAL_PSU_VOLTAGE_DIVIDER_VIN_RESISTOR_OHMS=220000
--DEXTERNAL_PSU_VOLTAGE_DIVIDER_GND_RESISTOR_OHMS=47000
 ```
 
 The missing-PSU error print interval is configured in milliseconds with:
@@ -231,25 +224,13 @@ The missing-PSU error print interval is configured in milliseconds with:
 -DPSU_NOT_FOUND_ERROR_PRINTING_TIME_INTERVAL=5000
 ```
 
-At runtime, `AvrExternalPowerSupplyDetector` samples `A5` every 10 ms,
-converts the ADC reading to millivolts, and reconstructs the external `VMOT`
-voltage using the configured resistor divider. An IIR filter with a coefficient
-of `1/8` prevents isolated ADC spikes from restarting motion.
+At runtime, `AvrExternalPowerSupplyDetector` samples the digital `A5` reading
+every 10 ms and requires 10 consecutive consistent samples (100 ms) before
+flipping `isExternalPowerSupplyAvailable()`, debouncing the opto-isolator's
+transition instead of filtering a measured voltage against a threshold.
 
-The supply becomes available after 10 consecutive filtered samples at or
-above:
-
-```text
-EXTERNAL_VOLTAGE_PSU - EXTERNAL_VOLTAGE_PSU_TOLERANCE
-```
-
-With the default values, this requires 100 ms at or above `22.5V`. Once
-available, the supply is declared lost only after 10 consecutive filtered
-samples below `22.1V`. The 400 mV hysteresis prevents repeated transitions
-close to the activation threshold.
-
-Confirmed supply transitions produce a concise event containing the filtered
-voltage measurement:
+Confirmed supply transitions produce a concise event containing the nominal
+voltage value:
 
 ```text
 EVENT PSU=READY VMOTOR=<voltage>V
