@@ -5,9 +5,11 @@ The default target is the classic dual-core ESP32 development board based on
 the ESP-WROOM-32 module (including the AZDelivery clone). USB is only used to
 flash the firmware. Runtime communication uses Bluetooth Low Energy.
 
-The device name is `Vitral plotter servo control` and it implements the Nordic
-UART Service (NUS). GPIO2 also drives a status LED, alternating between one
-second off and one second on while the firmware is running.
+The device name is `ESP-WROOM-32` and it implements the Nordic UART Service
+(NUS). GPIO2 also drives a status LED, alternating between one second off and
+one second on while the firmware is running. GPIO22 is configured as a 50 Hz
+LEDC PWM output for the connected servo; `motorPosition` values from 0 to 255
+are mapped to 1000 us to 2000 us servo pulses.
 
 | Purpose | UUID | Properties |
 |---|---|---|
@@ -16,9 +18,26 @@ second off and one second on while the firmware is running.
 | ESP32 to client (TX) | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | Notify |
 
 After connecting, the client must subscribe to TX notifications. The firmware
-then sends `ESP-32 idle` every second. Bytes written to RX are returned as
-`ESP-32 echo X`, where `X` is the original payload. Long output is split into
-chunks that fit the negotiated BLE ATT MTU.
+then sends `firmware boot`. Bytes written to RX are parsed as ASCII commands;
+clients can send one complete command per BLE write or terminate streamed
+commands with `\r` or `\n`. Long output is split into chunks that fit the
+negotiated BLE ATT MTU.
+
+Initial BLE commands:
+
+```text
+hardware
+. [<id>]
+servo <id> <position>
+test off|on
+```
+
+`hardware` lists the GPIO22 servo PWM output and the GPIO2 heartbeat LED.
+`.` prints the current servo telemetry summary. `. 0` prints the CSV status
+for the servo PWM element and `. 1` prints the CSV status for the heartbeat
+LED element. `servo 0 <position>` sets the servo resource to a value from 0 to
+255 and disables the demo movement. `test off` stops the demo movement, while
+`test on` enables it again.
 
 ## Requirements
 
