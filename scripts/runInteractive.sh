@@ -46,8 +46,7 @@ PY
   fi
 
   if [ "${#ports[@]}" -eq 0 ]; then
-    echo "No serial ports found. Connect the board and try again." >&2
-    return 1
+    return 0
   fi
 
   printf '%s\n' "${ports[@]}"
@@ -80,4 +79,8 @@ cmake -S "${repo_root}/platform/interactiveConsole" \
   -DCMAKE_BUILD_TYPE=Debug >/dev/null
 cmake --build "${build_dir}" >/dev/null
 
-exec "${build_dir}/interactiveConsole" "${baud}" "${ports[@]}"
+if [ "${#ports[@]}" -eq 0 ]; then
+  exec "${build_dir}/interactiveConsole" "${baud}"
+else
+  exec "${build_dir}/interactiveConsole" "${baud}" "${ports[@]}"
+fi

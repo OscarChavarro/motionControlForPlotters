@@ -1,6 +1,7 @@
 #include "HardwareReportParser.h"
 
 #include "PowerSupplyUnitElement.h"
+#include "ServoElement.h"
 #include "SteperMotorElement.h"
 
 #include <cctype>
@@ -96,11 +97,24 @@ bool tryParsePowerSupplyLine(
   return true;
 }
 
+bool tryParseServoLine(
+    const std::string &line,
+    int id,
+    std::unique_ptr<Element> &out_element) {
+  if (line.find("servo") == std::string::npos &&
+      line.find("Servo") == std::string::npos) {
+    return false;
+  }
+  out_element = std::make_unique<ServoElement>(id);
+  return true;
+}
+
 }  // namespace
 
 std::vector<std::unique_ptr<Element>> HardwareReportParser::parse(
     const std::vector<std::string> &lines,
-    const std::string &title_prefix) {
+    const std::string &title_prefix,
+    int connection_id) {
   std::vector<std::unique_ptr<Element>> elements;
 
   for (const std::string &line : lines) {
@@ -112,8 +126,10 @@ std::vector<std::unique_ptr<Element>> HardwareReportParser::parse(
 
     std::unique_ptr<Element> element;
     if (tryParseStepperMotorLine(rest, id, element) ||
+        tryParseServoLine(rest, id, element) ||
         tryParsePowerSupplyLine(rest, id, element)) {
       element->setTitlePrefix(title_prefix);
+      element->setConnectionId(connection_id);
       elements.push_back(std::move(element));
     }
   }

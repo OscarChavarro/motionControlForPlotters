@@ -10,18 +10,18 @@ void KeyGuideWidget::draw(
   mvprintw(
       row,
       16,
-      "%s<F1> Console",
+      "%s<F1> Console/Next",
       current_mode == CONSOLE_MODE ? "*" : " ");
   mvprintw(
       row,
-      32,
+      37,
       "%s<F2> Elements",
       current_mode == ELEMENTS_MODE ? "*" : " ");
   if (current_mode == ELEMENTS_MODE) {
-    mvprintw(row, 49, "<tab> Next Element");
+    mvprintw(row, 54, "<tab> Next Element");
   }
   if (current_mode == ELEMENTS_MODE && element_focused) {
-    mvprintw(row, 69, "<left/right> Widget  <space> Click");
+    mvprintw(row, 74, "<left/right> Widget  <space> Click");
   }
   attroff(A_REVERSE);
 }

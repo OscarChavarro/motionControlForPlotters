@@ -12,5 +12,6 @@ class HardwareReportParser {
  public:
   static std::vector<std::unique_ptr<Element>> parse(
       const std::vector<std::string> &lines,
-      const std::string &title_prefix);
+      const std::string &title_prefix,
+      int connection_id = 0);
 };

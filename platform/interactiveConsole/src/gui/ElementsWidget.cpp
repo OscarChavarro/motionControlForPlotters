@@ -2,6 +2,7 @@
 
 #include "../model/ColorPairs.h"
 #include "../render/NcursesPowerSupplyUnitElementRenderer.h"
+#include "../render/NcursesServoElementRenderer.h"
 #include "../render/NcursesSteperMotorElementRenderer.h"
 
 #include <algorithm>
@@ -18,6 +19,10 @@ void drawElement(
     int height,
     bool selected) {
   if (NcursesSteperMotorElementRenderer::draw(
+          element, top_row, left_col, width, height, selected)) {
+    return;
+  }
+  if (NcursesServoElementRenderer::draw(
           element, top_row, left_col, width, height, selected)) {
     return;
   }
@@ -60,9 +65,8 @@ void ElementsWidget::draw(
   const int content_height = height - 1;
   const int element_count = static_cast<int>(elements.size());
 
-  // Up to 3 boxes per row; each box is drawn wider than tall (roughly
-  // twice as wide as it is tall) so it reads as square on screen, since
-  // terminal character cells are taller than they are wide.
+  // Up to 3 boxes per row. Height is constrained by the number of rows so
+  // a fourth element does not disappear below the console panel.
   int columns = std::min(3, element_count);
   while (columns > 1 && (COLS / columns) < 16) {
     --columns;
@@ -70,9 +74,8 @@ void ElementsWidget::draw(
   columns = std::max(1, columns);
 
   const int box_width = std::max(16, COLS / columns);
-  const int box_height = std::min(
-      std::max(4, box_width / 2),
-      std::max(4, content_height));
+  const int rows = std::max(1, (element_count + columns - 1) / columns);
+  const int box_height = std::max(4, content_height / rows);
 
   for (int index = 0; index < element_count; ++index) {
     const int column = index % columns;

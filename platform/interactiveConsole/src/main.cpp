@@ -9,6 +9,7 @@
 #include "gui/ElementsWidget.h"
 #include "gui/InteractiveCommandsInputWidget.h"
 #include "gui/KeyGuideWidget.h"
+#include "io/BlePort.h"
 #include "io/SerialPort.h"
 
 #include <algorithm>
@@ -18,8 +19,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <glob.h>
+#include <map>
 #include <memory>
 #include <ncurses.h>
+#include <set>
 #include <pthread.h>
 #include <string>
 #include <time.h>
@@ -31,7 +35,11 @@ static const std::chrono::seconds RECONNECT_INTERVAL(2);
 static const std::chrono::milliseconds HARDWARE_REPORT_TIMEOUT(800);
 static const std::chrono::milliseconds DEVICE_RESPONSE_TIMEOUT(800);
 static const std::chrono::milliseconds DEVICE_BOOT_TIMEOUT(1200);
+static const std::chrono::milliseconds BLE_SCAN_TIMEOUT(5000);
 static const std::chrono::seconds PSU_POLL_INTERVAL(10);
+static const std::chrono::seconds SERIAL_PORT_SCAN_INTERVAL(10);
+static const std::chrono::seconds NO_SERIAL_PORT_SCAN_INTERVAL(5);
+static const std::chrono::seconds BLE_SCAN_INTERVAL(10);
 static const int KEY_GUIDE_HEIGHT = 1;
 static const int INPUT_HEIGHT = 1;
 static const int ELEMENTS_MODE_CONSOLE_HEIGHT = 5;
@@ -75,24 +83,88 @@ static std::string lastWord(const std::string &text) {
 
 struct ConnectedDevice {
   ConnectedDevice(
+      int connection_id_value,
       std::string port_name,
       Device device_description,
       std::unique_ptr<SerialPort> serial_port)
-      : port(std::move(port_name)),
+      : connection_id(connection_id_value),
+        port(std::move(port_name)),
         device(std::move(device_description)),
-        serial(std::move(serial_port)) {}
+        serial(std::move(serial_port)) {
+  }
 
+  ConnectedDevice(
+      int connection_id_value,
+      std::string port_name,
+      Device device_description,
+      std::unique_ptr<BlePort> ble_port)
+      : connection_id(connection_id_value),
+        port(std::move(port_name)),
+        device(std::move(device_description)),
+        ble(std::move(ble_port)) {
+  }
+
+  int connection_id;
   std::string port;
   Device device;
   std::unique_ptr<SerialPort> serial;
+  std::unique_ptr<BlePort> ble;
+
+  bool isOpen() const {
+    if (serial != nullptr) {
+      return serial->isOpen();
+    }
+    return ble != nullptr && ble->isOpen();
+  }
+
+  bool writeText(const std::string &text) {
+    if (serial != nullptr) {
+      return serial->writeText(text);
+    }
+    return ble != nullptr && ble->writeText(text);
+  }
+
+  std::string readAvailable(bool &connection_lost) {
+    if (serial != nullptr) {
+      return serial->readAvailable(connection_lost);
+    }
+    if (ble != nullptr) {
+      return ble->readAvailable(connection_lost);
+    }
+    connection_lost = true;
+    return std::string();
+  }
 };
 
 struct SerialEvent {
-  SerialEvent(bool error_value, std::string text_value)
-      : error(error_value), text(std::move(text_value)) {}
+  SerialEvent(int connection_id_value, bool error_value, std::string text_value)
+      : connection_id(connection_id_value),
+        error(error_value),
+        text(std::move(text_value)) {}
 
+  int connection_id;
   bool error;
   std::string text;
+};
+
+struct DeviceCommand {
+  DeviceCommand(int connection_id_value, std::string text_value)
+      : connection_id(connection_id_value), text(std::move(text_value)) {
+  }
+
+  int connection_id;
+  std::string text;
+};
+
+struct HardwareReportCollection {
+  std::vector<std::string> lines;
+  std::string partial_line;
+};
+
+struct DeviceConnectionInfo {
+  int connection_id;
+  std::string port;
+  std::string hardware_description;
 };
 
 struct DeviceControlState {
@@ -108,7 +180,8 @@ struct DeviceControlState {
   std::string active_port;
   std::string active_hardware_description;
   size_t device_connection_count;
-  std::deque<std::string> commands;
+  std::vector<DeviceConnectionInfo> device_infos;
+  std::deque<DeviceCommand> commands;
   std::deque<SerialEvent> events;
 };
 
@@ -128,6 +201,7 @@ static void initDeviceControlState(
   state.active_port.clear();
   state.active_hardware_description.clear();
   state.device_connection_count = 0U;
+  state.device_infos.clear();
   state.commands.clear();
   state.events.clear();
 }
@@ -165,13 +239,15 @@ static void publishStartupResult(
     bool connected,
     const std::string &active_port,
     const std::string &active_hardware_description,
-    size_t device_connection_count) {
+    size_t device_connection_count,
+    const std::vector<DeviceConnectionInfo> &device_infos) {
   pthread_mutex_lock(&state.mutex);
   state.expected_found = expected_found;
   state.connected = connected;
   state.active_port = active_port;
   state.active_hardware_description = active_hardware_description;
   state.device_connection_count = device_connection_count;
+  state.device_infos = device_infos;
   state.startup_complete = true;
   pthread_cond_broadcast(&state.startup_cond);
   pthread_mutex_unlock(&state.mutex);
@@ -183,15 +259,21 @@ static void publishConnected(DeviceControlState &state, bool connected) {
   pthread_mutex_unlock(&state.mutex);
 }
 
-static void publishSerialText(DeviceControlState &state, const std::string &text) {
+static void publishSerialText(
+    DeviceControlState &state,
+    int connection_id,
+    const std::string &text) {
   pthread_mutex_lock(&state.mutex);
-  state.events.emplace_back(false, text);
+  state.events.emplace_back(connection_id, false, text);
   pthread_mutex_unlock(&state.mutex);
 }
 
-static void publishSerialError(DeviceControlState &state, const std::string &text) {
+static void publishSerialError(
+    DeviceControlState &state,
+    int connection_id,
+    const std::string &text) {
   pthread_mutex_lock(&state.mutex);
-  state.events.emplace_back(true, text);
+  state.events.emplace_back(connection_id, true, text);
   pthread_mutex_unlock(&state.mutex);
 }
 
@@ -202,19 +284,19 @@ static bool takeShutdownRequested(DeviceControlState &state) {
   return shutdown_requested;
 }
 
-static std::deque<std::string> takePendingCommands(DeviceControlState &state) {
+static std::deque<DeviceCommand> takePendingCommands(DeviceControlState &state) {
   pthread_mutex_lock(&state.mutex);
-  std::deque<std::string> commands;
+  std::deque<DeviceCommand> commands;
   commands.swap(state.commands);
   pthread_mutex_unlock(&state.mutex);
   return commands;
 }
 
 static void enqueueDeviceCommand(
-    DeviceControlState &state, const std::string &command) {
+    DeviceControlState &state, int connection_id, const std::string &command) {
   pthread_mutex_lock(&state.mutex);
   if (!state.shutdown_requested) {
-    state.commands.push_back(command);
+    state.commands.emplace_back(connection_id, command);
     pthread_cond_signal(&state.command_cond);
   }
   pthread_mutex_unlock(&state.mutex);
@@ -232,7 +314,8 @@ static std::deque<SerialEvent> takeSerialEvents(
     bool &connected,
     std::string &active_port,
     std::string &active_hardware_description,
-    size_t &device_connection_count) {
+    size_t &device_connection_count,
+    std::vector<DeviceConnectionInfo> &device_infos) {
   pthread_mutex_lock(&state.mutex);
   std::deque<SerialEvent> events;
   events.swap(state.events);
@@ -240,12 +323,13 @@ static std::deque<SerialEvent> takeSerialEvents(
   active_port = state.active_port;
   active_hardware_description = state.active_hardware_description;
   device_connection_count = state.device_connection_count;
+  device_infos = state.device_infos;
   pthread_mutex_unlock(&state.mutex);
   return events;
 }
 
 static std::unique_ptr<ConnectedDevice> connectToDevice(
-    const char *port, int baud_rate) {
+    int connection_id, const char *port, int baud_rate) {
   std::unique_ptr<SerialPort> serial(new SerialPort(port, baud_rate));
   if (!serial->isOpen()) {
     return nullptr;
@@ -284,7 +368,7 @@ static std::unique_ptr<ConnectedDevice> connectToDevice(
         Device device("", "");
         if (Device::parseDescription(line, device)) {
           return std::unique_ptr<ConnectedDevice>(new ConnectedDevice(
-              port, std::move(device), std::move(serial)));
+              connection_id, port, std::move(device), std::move(serial)));
         }
       }
       lines.clear();
@@ -295,83 +379,322 @@ static std::unique_ptr<ConnectedDevice> connectToDevice(
   return nullptr;
 }
 
+static void appendGlobMatches(
+    const char *pattern,
+    std::set<std::string> &ports) {
+  glob_t matches;
+  memset(&matches, 0, sizeof(matches));
+  if (glob(pattern, 0, nullptr, &matches) == 0) {
+    for (size_t index = 0; index < matches.gl_pathc; ++index) {
+      ports.insert(matches.gl_pathv[index]);
+    }
+  }
+  globfree(&matches);
+}
+
+static std::vector<std::string> discoverSerialPorts() {
+  std::set<std::string> ports;
+#ifdef __APPLE__
+  appendGlobMatches("/dev/cu.usbmodem*", ports);
+  appendGlobMatches("/dev/cu.usbserial*", ports);
+#else
+  appendGlobMatches("/dev/ttyACM*", ports);
+  appendGlobMatches("/dev/ttyUSB*", ports);
+#endif
+  return std::vector<std::string>(ports.begin(), ports.end());
+}
+
+static std::vector<DeviceConnectionInfo> buildDeviceInfos(
+    const std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices) {
+  std::vector<DeviceConnectionInfo> infos;
+  for (const std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+    infos.push_back({
+        device->connection_id,
+        device->port,
+        device->device.hardwareDescription(),
+    });
+  }
+  return infos;
+}
+
+static void publishConnectionSnapshot(
+    DeviceControlState &state,
+    const std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices) {
+  bool connected = false;
+  std::string active_ports;
+  std::string active_hardware;
+  for (const std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+    if (device->isOpen()) {
+      connected = true;
+    }
+    if (!active_ports.empty()) {
+      active_ports += ", ";
+    }
+    active_ports += device->port;
+    if (!active_hardware.empty()) {
+      active_hardware += ", ";
+    }
+    active_hardware += device->device.hardwareDescription();
+  }
+
+  publishStartupResult(
+      state,
+      true,
+      connected,
+      active_ports,
+      active_hardware,
+      connected_devices.size(),
+      buildDeviceInfos(connected_devices));
+}
+
+static ConnectedDevice *findDeviceByPort(
+    std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices,
+    const std::string &port) {
+  for (std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+    if (device->port == port) {
+      return device.get();
+    }
+  }
+  return nullptr;
+}
+
+static bool eraseDeviceByConnectionId(
+    std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices,
+    int connection_id) {
+  const size_t old_size = connected_devices.size();
+  connected_devices.erase(
+      std::remove_if(
+          connected_devices.begin(),
+          connected_devices.end(),
+          [connection_id](const std::unique_ptr<ConnectedDevice> &device) {
+            return device->connection_id == connection_id;
+          }),
+      connected_devices.end());
+  return connected_devices.size() != old_size;
+}
+
+static void scanSerialPorts(
+    DeviceControlState &state,
+    std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices,
+    int &next_connection_id) {
+  std::set<std::string> candidate_ports(state.ports.begin(), state.ports.end());
+  const std::vector<std::string> discovered_ports = discoverSerialPorts();
+  candidate_ports.insert(discovered_ports.begin(), discovered_ports.end());
+
+  bool changed = false;
+  for (const std::string &port : candidate_ports) {
+    ConnectedDevice *existing = findDeviceByPort(connected_devices, port);
+    if (existing != nullptr && existing->isOpen()) {
+      continue;
+    }
+
+    const int connection_id = existing != nullptr ?
+        existing->connection_id :
+        next_connection_id;
+    std::unique_ptr<ConnectedDevice> device =
+        connectToDevice(connection_id, port.c_str(), state.baud_rate);
+    if (device == nullptr) {
+      continue;
+    }
+
+    if (existing != nullptr) {
+      for (std::unique_ptr<ConnectedDevice> &stored : connected_devices) {
+        if (stored.get() == existing) {
+          stored = std::move(device);
+          break;
+        }
+      }
+    } else {
+      connected_devices.push_back(std::move(device));
+      ++next_connection_id;
+    }
+    changed = true;
+  }
+
+  if (changed) {
+    publishConnectionSnapshot(state, connected_devices);
+  }
+}
+
+static std::unique_ptr<ConnectedDevice> connectToBleDevice(int connection_id) {
+  std::unique_ptr<BlePort> ble = BlePort::scanAndConnect(BLE_SCAN_TIMEOUT);
+  if (ble == nullptr || !ble->isOpen()) {
+    return nullptr;
+  }
+
+  Device device("esp32 ESP-WROOM-32", "servo BLE controller");
+  std::string name = ble->name();
+  if (name.empty()) {
+    name = "BLE servo";
+  }
+  return std::unique_ptr<ConnectedDevice>(new ConnectedDevice(
+      connection_id, name, std::move(device), std::move(ble)));
+}
+
+static bool hasBleDevice(
+    const std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices) {
+  for (const std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+    if (device->ble != nullptr) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool hasSerialDevice(
+    const std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices) {
+  for (const std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+    if (device->serial != nullptr) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static std::chrono::seconds serialPortScanInterval(
+    const std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices) {
+  return hasSerialDevice(connected_devices) ?
+      SERIAL_PORT_SCAN_INTERVAL :
+      NO_SERIAL_PORT_SCAN_INTERVAL;
+}
+
+static void scanBleDevices(
+    DeviceControlState &state,
+    std::vector<std::unique_ptr<ConnectedDevice>> &connected_devices,
+    int &next_connection_id) {
+  if (hasBleDevice(connected_devices)) {
+    return;
+  }
+
+  std::unique_ptr<ConnectedDevice> ble_device =
+      connectToBleDevice(next_connection_id);
+  if (ble_device == nullptr) {
+    return;
+  }
+
+  connected_devices.push_back(std::move(ble_device));
+  ++next_connection_id;
+  publishConnectionSnapshot(state, connected_devices);
+}
+
 static void *runDeviceControlThread(void *argument) {
   DeviceControlState *state = static_cast<DeviceControlState *>(argument);
 
   std::vector<std::unique_ptr<ConnectedDevice>> connected_devices;
-  for (const std::string &port : state->ports) {
+  int next_connection_id = 0;
+  std::set<std::string> startup_ports(state->ports.begin(), state->ports.end());
+  const std::vector<std::string> discovered_startup_ports = discoverSerialPorts();
+  startup_ports.insert(
+      discovered_startup_ports.begin(), discovered_startup_ports.end());
+
+  for (const std::string &port : startup_ports) {
     if (takeShutdownRequested(*state)) {
-      publishStartupResult(*state, false, false, std::string(), std::string(), 0U);
+      publishStartupResult(
+          *state,
+          false,
+          false,
+          std::string(),
+          std::string(),
+          0U,
+          std::vector<DeviceConnectionInfo>());
       return nullptr;
     }
 
     std::unique_ptr<ConnectedDevice> device = connectToDevice(
-        port.c_str(), state->baud_rate);
+        next_connection_id, port.c_str(), state->baud_rate);
     if (device != nullptr) {
       connected_devices.push_back(std::move(device));
+      ++next_connection_id;
     }
   }
 
-  const std::string expected_hardware = "arduino ATmega2650";
-  const std::string expected_role = "XY steper motor controller";
-  auto active_device = std::find_if(
-      connected_devices.begin(),
-      connected_devices.end(),
-      [&expected_hardware, &expected_role](
-          const std::unique_ptr<ConnectedDevice> &device) {
-        return device->device.hardwareDescription() == expected_hardware &&
-               device->device.role() == expected_role;
-      });
-
-  if (active_device == connected_devices.end()) {
-    publishStartupResult(*state, false, false, std::string(), std::string(),
-                         connected_devices.size());
-    return nullptr;
+  std::unique_ptr<ConnectedDevice> ble_device =
+      connectToBleDevice(next_connection_id);
+  if (ble_device != nullptr) {
+    connected_devices.push_back(std::move(ble_device));
+    ++next_connection_id;
   }
 
-  ConnectedDevice &selected_device = **active_device;
-  SerialPort &serial = *selected_device.serial;
-  bool connected = serial.isOpen();
-  std::chrono::steady_clock::time_point next_reconnect_attempt =
-      std::chrono::steady_clock::now();
+  publishConnectionSnapshot(*state, connected_devices);
+  bool connected = false;
+  for (const std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+    if (device->isOpen()) {
+      connected = true;
+    }
+  }
 
-  publishStartupResult(
-      *state,
-      true,
-      connected,
-      selected_device.port,
-      selected_device.device.hardwareDescription(),
-      connected_devices.size());
+  std::chrono::steady_clock::time_point next_serial_port_scan =
+      std::chrono::steady_clock::now() +
+      serialPortScanInterval(connected_devices);
+  std::chrono::steady_clock::time_point next_ble_scan =
+      std::chrono::steady_clock::now() + BLE_SCAN_INTERVAL;
 
   while (!takeShutdownRequested(*state)) {
-    std::deque<std::string> commands = takePendingCommands(*state);
+    std::deque<DeviceCommand> commands = takePendingCommands(*state);
     while (!commands.empty()) {
-      if (connected && !serial.writeText(commands.front())) {
-        publishSerialError(*state, "[serial write error]");
+      const DeviceCommand command = commands.front();
+      for (std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+        if (command.connection_id >= 0 &&
+            device->connection_id != command.connection_id) {
+          continue;
+        }
+        if (device->isOpen() && !device->writeText(command.text)) {
+          publishSerialError(
+              *state, device->connection_id, "[device write error]");
+        }
       }
       commands.pop_front();
     }
 
-    if (connected) {
+    if (std::chrono::steady_clock::now() >= next_serial_port_scan) {
+      scanSerialPorts(*state, connected_devices, next_connection_id);
+      next_serial_port_scan =
+          std::chrono::steady_clock::now() +
+          serialPortScanInterval(connected_devices);
+    }
+    if (std::chrono::steady_clock::now() >= next_ble_scan) {
+      scanBleDevices(*state, connected_devices, next_connection_id);
+      next_ble_scan = std::chrono::steady_clock::now() + BLE_SCAN_INTERVAL;
+    }
+
+    bool any_connected = false;
+    std::vector<int> lost_connection_ids;
+    for (std::unique_ptr<ConnectedDevice> &device : connected_devices) {
+      if (!device->isOpen()) {
+        if (device->ble != nullptr) {
+          publishSerialError(
+              *state,
+              device->connection_id,
+              "[device error: connection lost]");
+          lost_connection_ids.push_back(device->connection_id);
+        }
+        continue;
+      }
+      any_connected = true;
       bool connection_lost = false;
-      const std::string serial_text = serial.readAvailable(connection_lost);
+      const std::string serial_text = device->readAvailable(connection_lost);
       if (connection_lost) {
-        publishSerialError(*state, "[serial error: connection lost, retrying]");
-        connected = false;
-        publishConnected(*state, false);
-        next_reconnect_attempt =
-            std::chrono::steady_clock::now() + RECONNECT_INTERVAL;
+        publishSerialError(
+            *state,
+            device->connection_id,
+            "[device error: connection lost]");
+        lost_connection_ids.push_back(device->connection_id);
       } else if (!serial_text.empty()) {
-        publishSerialText(*state, serial_text);
+        publishSerialText(*state, device->connection_id, serial_text);
       }
-    } else if (std::chrono::steady_clock::now() >= next_reconnect_attempt) {
-      if (!serial.open(selected_device.port.c_str(), state->baud_rate)) {
-        next_reconnect_attempt =
-            std::chrono::steady_clock::now() + RECONNECT_INTERVAL;
-      } else {
-        connected = true;
-        publishConnected(*state, true);
+    }
+    if (!lost_connection_ids.empty()) {
+      for (int connection_id : lost_connection_ids) {
+        eraseDeviceByConnectionId(connected_devices, connection_id);
       }
+      publishConnectionSnapshot(*state, connected_devices);
+      next_serial_port_scan =
+          std::chrono::steady_clock::now() +
+          serialPortScanInterval(connected_devices);
+    }
+    if (any_connected != connected) {
+      connected = any_connected;
+      publishConnected(*state, connected);
     }
 
     waitForCommandsOrTick(*state);
@@ -451,6 +774,17 @@ static void syncMotorDriverEnabledAcrossElements(
   }
 }
 
+static std::string titlePrefixForConnection(
+    const std::vector<DeviceConnectionInfo> &device_infos,
+    int connection_id) {
+  for (const DeviceConnectionInfo &info : device_infos) {
+    if (info.connection_id == connection_id) {
+      return lastWord(info.hardware_description);
+    }
+  }
+  return std::string();
+}
+
 static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
   setlocale(LC_ALL, "");
 
@@ -496,7 +830,9 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
   init_pair(SELECTED_ELEMENT_PAIR, COLOR_GREEN, -1);
   init_pair(UNSELECTED_ELEMENT_PAIR, COLOR_WHITE, -1);
 
-  ConsoleWidget console;
+  std::map<int, ConsoleWidget> consoles;
+  std::vector<DeviceConnectionInfo> device_infos;
+  int selected_console_connection_id = -1;
   KeyGuideWidget key_guide;
   InteractiveCommandsInputWidget command_input;
   ElementsWidget elements_widget;
@@ -505,20 +841,19 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
   bool connected = true;
   std::string active_port;
   std::string active_hardware_description;
-  std::string element_title_prefix;
   size_t device_connection_count = 0U;
 
   std::vector<std::unique_ptr<Element>> elements;
+  std::set<int> known_connection_ids;
   // Keyboard focus model: focus is either the console input line, or one
   // of the Elements boxes. <Tab>/<Shift-Tab> move circularly through
   // console -> element 0 -> ... -> element N-1 -> console.
   bool console_focused = true;
   size_t focused_element_index = 0U;
   bool collecting_hardware_report = false;
-  std::vector<std::string> hardware_report_lines;
-  std::string hardware_report_partial_line;
+  std::map<int, HardwareReportCollection> hardware_reports;
   std::chrono::steady_clock::time_point hardware_report_deadline;
-  std::string status_line_partial;
+  std::map<int, std::string> status_line_partials;
   std::chrono::steady_clock::time_point next_psu_poll =
       std::chrono::steady_clock::now();
 
@@ -529,7 +864,9 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
     for (auto &element : elements) {
       if (dynamic_cast<PowerSupplyUnitElement *>(element.get()) != nullptr) {
         enqueueDeviceCommand(
-            device_control, ". " + std::to_string(element->id()) + "\n");
+            device_control,
+            element->connectionId(),
+            ". " + std::to_string(element->id()) + "\n");
       }
     }
   };
@@ -538,23 +875,47 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
     if (!connected) {
       return;
     }
-    enqueueDeviceCommand(device_control, "hardware\n");
+    enqueueDeviceCommand(device_control, -1, "hardware\n");
     collecting_hardware_report = true;
-    hardware_report_lines.clear();
-    hardware_report_partial_line.clear();
+    hardware_reports.clear();
     hardware_report_deadline =
         std::chrono::steady_clock::now() + HARDWARE_REPORT_TIMEOUT;
   };
 
   auto finishHardwareReport = [&]() {
-    elements = HardwareReportParser::parse(
-        hardware_report_lines, element_title_prefix);
+    std::vector<std::unique_ptr<Element>> parsed_elements;
+    std::set<int> active_connection_ids;
+    for (const DeviceConnectionInfo &info : device_infos) {
+      active_connection_ids.insert(info.connection_id);
+    }
+    for (const std::pair<const int, HardwareReportCollection> &report :
+         hardware_reports) {
+      if (active_connection_ids.find(report.first) ==
+          active_connection_ids.end()) {
+        continue;
+      }
+      std::vector<std::unique_ptr<Element>> device_elements =
+          HardwareReportParser::parse(
+              report.second.lines,
+              titlePrefixForConnection(device_infos, report.first),
+              report.first);
+      for (std::unique_ptr<Element> &element : device_elements) {
+        parsed_elements.push_back(std::move(element));
+      }
+    }
+    elements = std::move(parsed_elements);
     collecting_hardware_report = false;
     if (elements.empty()) {
       console_focused = true;
       focused_element_index = 0U;
     } else if (focused_element_index >= elements.size()) {
       focused_element_index = elements.size() - 1U;
+    }
+    for (const std::unique_ptr<Element> &element : elements) {
+      enqueueDeviceCommand(
+          device_control,
+          element->connectionId(),
+          ". " + std::to_string(element->id()) + "\n");
     }
   };
 
@@ -564,34 +925,87 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
         connected,
         active_port,
         active_hardware_description,
-        device_connection_count);
-    element_title_prefix = lastWord(active_hardware_description);
+        device_connection_count,
+        device_infos);
+    std::set<int> active_connection_ids;
+    bool found_new_connection = false;
+    for (const DeviceConnectionInfo &info : device_infos) {
+      active_connection_ids.insert(info.connection_id);
+      if (known_connection_ids.find(info.connection_id) ==
+          known_connection_ids.end()) {
+        found_new_connection = true;
+      }
+    }
+    known_connection_ids = active_connection_ids;
+    if (!active_connection_ids.empty()) {
+      elements.erase(
+          std::remove_if(
+              elements.begin(),
+              elements.end(),
+              [&active_connection_ids](
+                  const std::unique_ptr<Element> &element) {
+                return active_connection_ids.find(element->connectionId()) ==
+                    active_connection_ids.end();
+              }),
+          elements.end());
+      if (focused_element_index >= elements.size() && !elements.empty()) {
+        focused_element_index = elements.size() - 1U;
+      }
+      if (elements.empty()) {
+        focused_element_index = 0U;
+        console_focused = true;
+      }
+    } else {
+      elements.clear();
+      focused_element_index = 0U;
+      console_focused = true;
+    }
+    for (const DeviceConnectionInfo &info : device_infos) {
+      if (consoles.find(info.connection_id) == consoles.end()) {
+        consoles.emplace(info.connection_id, ConsoleWidget());
+      }
+    }
+    if (selected_console_connection_id < 0 && !device_infos.empty()) {
+      selected_console_connection_id = device_infos.front().connection_id;
+    }
+    if (selected_console_connection_id < 0) {
+      consoles.emplace(-1, ConsoleWidget());
+      selected_console_connection_id = -1;
+    }
+    if (!active_connection_ids.empty() &&
+        active_connection_ids.find(selected_console_connection_id) ==
+            active_connection_ids.end()) {
+      selected_console_connection_id = device_infos.front().connection_id;
+    }
+    ConsoleWidget &selected_console = consoles[selected_console_connection_id];
     while (!serial_events.empty()) {
       const SerialEvent event = serial_events.front();
       serial_events.pop_front();
+      ConsoleWidget &event_console = consoles[event.connection_id];
       if (event.error) {
-        console.appendErrorLine(event.text);
+        event_console.appendErrorLine(event.text);
         continue;
       }
 
-      console.appendSerialText(event.text);
+      event_console.appendSerialText(event.text);
       if (collecting_hardware_report) {
+        HardwareReportCollection &report = hardware_reports[event.connection_id];
         appendRawLines(
-            hardware_report_partial_line, hardware_report_lines, event.text);
-        if (!hardware_report_lines.empty() &&
-            hardware_report_lines.back().find("power supply") !=
-                std::string::npos) {
-          finishHardwareReport();
-        }
+            report.partial_line, report.lines, event.text);
       }
       std::vector<std::string> status_lines;
-      appendRawLines(status_line_partial, status_lines, event.text);
+      appendRawLines(
+          status_line_partials[event.connection_id], status_lines, event.text);
       for (const std::string &status_line : status_lines) {
         routeIncomingStatusLine(status_line, elements);
       }
       if (!status_lines.empty()) {
         syncMotorDriverEnabledAcrossElements(elements);
       }
+    }
+
+    if (found_new_connection && mode == ELEMENTS_MODE) {
+      requestHardwareReport();
     }
 
     if (connected && mode == ELEMENTS_MODE &&
@@ -620,12 +1034,23 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
     if (key == KEY_RESIZE) {
       clear();
     } else if (key == KEY_PPAGE) {
-      console.scrollPageUp(visible_rows);
+      selected_console.scrollPageUp(visible_rows);
     } else if (key == KEY_NPAGE) {
-      console.scrollPageDown(visible_rows);
+      selected_console.scrollPageDown(visible_rows);
     } else if (key == KEY_F(1)) {
       mode = CONSOLE_MODE;
       console_focused = true;
+      if (!device_infos.empty()) {
+        size_t current_index = 0U;
+        for (size_t index = 0U; index < device_infos.size(); ++index) {
+          if (device_infos[index].connection_id == selected_console_connection_id) {
+            current_index = index;
+            break;
+          }
+        }
+        selected_console_connection_id =
+            device_infos[(current_index + 1U) % device_infos.size()].connection_id;
+      }
       clear();
     } else if (key == KEY_F(2)) {
       mode = ELEMENTS_MODE;
@@ -663,9 +1088,9 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
       } else if (command_input.handleKey(key)) {
         std::string message_to_send = command_input.takeCommand() + "\n";
         if (connected) {
-          enqueueDeviceCommand(device_control, message_to_send);
+          enqueueDeviceCommand(device_control, -1, message_to_send);
         } else {
-          console.appendErrorLine("[serial write error]");
+          selected_console.appendErrorLine("[device write error]");
         }
       }
     } else if (!elements.empty()) {
@@ -674,9 +1099,17 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
               key, command_to_send) &&
           !command_to_send.empty()) {
         if (connected) {
-          enqueueDeviceCommand(device_control, command_to_send + "\n");
+          enqueueDeviceCommand(
+              device_control,
+              elements[focused_element_index]->connectionId(),
+              command_to_send + "\n");
+          enqueueDeviceCommand(
+              device_control,
+              elements[focused_element_index]->connectionId(),
+              ". " + std::to_string(elements[focused_element_index]->id()) +
+                  "\n");
         } else {
-          console.appendErrorLine("[serial write error]");
+          selected_console.appendErrorLine("[device write error]");
         }
       }
     }
@@ -692,13 +1125,23 @@ static int runConsole(const std::vector<std::string> &ports, int baud_rate) {
                                std::to_string(device_connection_count) +
                                " device connections)" +
                                (connected ? "" : " disconnected");
+    std::string selected_console_status = status;
+    for (const DeviceConnectionInfo &info : device_infos) {
+      if (info.connection_id == selected_console_connection_id) {
+        selected_console_status = info.port + " (" +
+            info.hardware_description + ") [" +
+            std::to_string(device_connection_count) + " device connections]" +
+            (connected ? "" : " disconnected");
+        break;
+      }
+    }
     if (mode == ELEMENTS_MODE && elements_height > 0) {
       const size_t highlighted_index =
           console_focused ? elements.size() : focused_element_index;
       elements_widget.draw(
           elements_top_row, elements_height, elements, highlighted_index);
     }
-    console.draw(console_top_row, console_height, status);
+    selected_console.draw(console_top_row, console_height, selected_console_status);
     key_guide.draw(
         console_top_row + console_height,
         mode,

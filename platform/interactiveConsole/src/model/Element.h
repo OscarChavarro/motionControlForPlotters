@@ -18,6 +18,14 @@ class Element {
     return id_;
   }
 
+  int connectionId() const {
+    return connection_id_;
+  }
+
+  void setConnectionId(int connection_id) {
+    connection_id_ = connection_id;
+  }
+
   void setTitlePrefix(const std::string &prefix) {
     title_prefix_ = prefix;
   }
@@ -52,5 +60,6 @@ class Element {
 
  private:
   int id_;
+  int connection_id_ = 0;
   std::string title_prefix_;
 };
