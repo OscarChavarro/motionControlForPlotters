@@ -2,6 +2,9 @@
 /build/
 /cmake-build-*/
 /platform/interactiveConsole/build/
+/platform/esp32ServoBLEController/build/
+/platform/esp32ServoBLEController/sdkconfig
+/platform/esp32ServoBLEController/sdkconfig.old
 
 # CMake generated files
 CMakeCache.txt

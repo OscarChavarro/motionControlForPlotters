@@ -15,6 +15,37 @@ endif()
 set(MOTION_CONTROL_REPO_ROOT "${CMAKE_SOURCE_DIR}" CACHE PATH
   "Root directory of the motionControl repository")
 
+# ESP-IDF owns the toolchain and CMake lifecycle of ESP32 firmware projects, so
+# this firmware is built as a nested CMake project and surfaced here as regular
+# repository-level targets.
+set(MOTIONCONTROL_ESP32_PROJECT_DIR
+  "${MOTION_CONTROL_REPO_ROOT}/platform/esp32ServoBLEController")
+set(IDF_TARGET "esp32" CACHE STRING
+  "ESP-IDF chip target for the BLE firmware (for example esp32 or esp32h2)")
+
+add_custom_target(esp32_build
+  COMMAND ${CMAKE_COMMAND} -E env IDF_TARGET=${IDF_TARGET}
+    ${MOTIONCONTROL_ESP32_PROJECT_DIR}/scripts/compile.sh
+  WORKING_DIRECTORY ${MOTION_CONTROL_REPO_ROOT}
+  COMMENT "Building ESP32 BLE firmware"
+  USES_TERMINAL
+  VERBATIM)
+
+add_custom_target(esp32_flash
+  COMMAND ${CMAKE_COMMAND} -E env IDF_TARGET=${IDF_TARGET}
+    ${MOTIONCONTROL_ESP32_PROJECT_DIR}/scripts/send.sh
+  WORKING_DIRECTORY ${MOTION_CONTROL_REPO_ROOT}
+  COMMENT "Building and flashing ESP32 BLE firmware"
+  USES_TERMINAL
+  VERBATIM)
+
+add_custom_target(esp32_clean
+  COMMAND ${MOTIONCONTROL_ESP32_PROJECT_DIR}/scripts/clean.sh
+  WORKING_DIRECTORY ${MOTION_CONTROL_REPO_ROOT}
+  COMMENT "Cleaning ESP32 BLE firmware artifacts"
+  USES_TERMINAL
+  VERBATIM)
+
 add_subdirectory(motionControlCore)
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "avr")

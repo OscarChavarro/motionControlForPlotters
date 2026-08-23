@@ -1,13 +1,13 @@
 # Motion Control for Plotters
 
-Motion Control for Plotters is a C++17 firmware-oriented project for building a portable motion-control core and platform-specific embedded targets for plotter hardware.
+Motion Control for Plotters is a firmware-oriented C++ project for building a portable motion-control core and platform-specific embedded targets for plotter hardware. The portable core and AVR target use C++17; the ESP32 target uses C++20.
 
 The current codebase is split into two main areas:
 
 - `motionControlCore`: reusable platform-independent motion logic.
 - `platform`: hardware-specific firmware entry points and device wrappers.
 
-At this stage, the core contains 2D rasterization, stepper-motor modeling, and a portable per-motor controller. The Arduino AVR target supplies the hardware clock, UART, power-supply sensing, and `STEP`/`DIR` pulse generation. Its current repeating movement is a diagnostic program that will evolve into the generic controller.
+At this stage, the core contains 2D rasterization, stepper-motor modeling, and a portable per-motor controller. The Arduino AVR target supplies the hardware clock, UART, power-supply sensing, and `STEP`/`DIR` pulse generation. The ESP32 target supplies a BLE serial endpoint that will later control servos. The Arduino's current repeating movement is a diagnostic program that will evolve into the generic controller.
 
 ## Core
 
@@ -33,7 +33,15 @@ The rasterizer does not draw into a framebuffer. Instead, callers provide callba
 
 ## Platform
 
-The implemented platform target is `platform/arduinoStepMotorsXYController`, which builds AVR firmware without the Arduino IDE. Its platform-specific C++ code lives directly under `platform/arduinoStepMotorsXYController/src`.
+The implemented platform targets are:
+
+- `platform/arduinoStepMotorsXYController`, AVR firmware built without the
+  Arduino IDE.
+- `platform/esp32ServoBLEController`, C++20 ESP-IDF firmware for an ESP-WROOM-32
+  development board. It exposes a Nordic UART Service over BLE and only uses
+  USB for flashing.
+
+The Arduino target's platform-specific C++ code lives directly under `platform/arduinoStepMotorsXYController/src`.
 
 It provides:
 
@@ -70,6 +78,7 @@ Prerequisites:
 - AVR binutils and runtime libraries.
 - `avrdude` for uploading firmware to an Arduino board.
 - `make` or another CMake-supported build tool.
+- ESP-IDF 5.x and its ESP32 toolchain for the optional ESP32 firmware.
 
 macOS:
 
@@ -110,6 +119,24 @@ The generated firmware is written to:
 build/platform-arduinoStepMotorsXYController/arduinoStepMotorsXYController.hex
 ```
 
+Build the ESP32 BLE firmware after activating ESP-IDF:
+
+```bash
+cmake --build build --target esp32_build
+```
+
+The ESP-IDF target defaults to `esp32`. Select another supported family member
+when configuring the repository, for example:
+
+```bash
+cmake -S . -B build-h2 -DIDF_TARGET=esp32h2
+cmake --build build-h2 --target esp32_build
+```
+
+You can also run
+`platform/esp32ServoBLEController/scripts/compile.sh` directly. See that
+platform's README for its BLE service UUIDs and setup details.
+
 ## Upload
 
 Connect the Arduino board and configure the serial port if needed:
@@ -120,6 +147,12 @@ cmake --build build --target arduino_upload
 ```
 
 On macOS, the port will commonly look like `/dev/cu.usbmodem...` or `/dev/cu.usbserial...`.
+
+Flash the ESP32 firmware through its temporary USB connection with:
+
+```bash
+cmake --build build --target esp32_flash
+```
 
 ## Serial Monitor
 
@@ -133,7 +166,10 @@ The monitor target uses `pyserial` miniterm when available, then falls back to `
 
 ## Configuration
 
-The top-level CMake project exposes these Arduino-related options:
+The top-level CMake project exposes these platform options:
+
+- `IDF_TARGET`: ESP-IDF target used by the BLE firmware (default `esp32`;
+  for example, `esp32h2`).
 
 - `ARDUINO_BOARD`: board preset, one of `uno`, `nano`, or `mega2560`.
 - `ARDUINO_PORT`: serial/upload port.
